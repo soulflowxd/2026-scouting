@@ -195,6 +195,7 @@ function TeamDetailDialog({
                 <Metric label="Record" value={`${detail.stats?.wins ?? 0}-${detail.stats?.losses ?? 0}-${detail.stats?.ties ?? 0}`} />
                 <Metric label="Avg RP" value={fmt(detail.stats?.averageRp)} />
                 <Metric label="Auto EPA" value={fmt(detail.stats?.autoEpa)} />
+                <Metric label="Teleop EPA" value={fmt(detail.stats?.teleopEpa)} />
                 <Metric label="Endgame EPA" value={fmt(detail.stats?.endgameEpa)} />
               </div>
             </div>

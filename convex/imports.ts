@@ -355,11 +355,20 @@ export const refreshStatsInternal = internalAction({
     const tbaHeaders = { "X-TBA-Auth-Key": tbaKey }
     const eventKey = eventData.eventKey
 
-    const oprs = await fetchJson<{
+    let oprs: {
       oprs?: Record<string, number>
       dprs?: Record<string, number>
       ccwms?: Record<string, number>
-    }>(`https://www.thebluealliance.com/api/v3/event/${eventKey}/oprs`, tbaHeaders)
+    } = {}
+    try {
+      oprs = await fetchJson<{
+        oprs?: Record<string, number>
+        dprs?: Record<string, number>
+        ccwms?: Record<string, number>
+      }>(`https://www.thebluealliance.com/api/v3/event/${eventKey}/oprs`, tbaHeaders)
+    } catch {
+      oprs = {}
+    }
 
     let rankings: NonNullable<TbaRankings["rankings"]> = []
     try {
@@ -510,8 +519,15 @@ export const refreshStatsInternal = internalAction({
             (sortOrders.length > 0 ? sortOrders[0] : undefined),
           epa:
             nestedFiniteRecordNumber(epaRow, ["epa", "total_points"]) ??
+            nestedFiniteRecordNumber(epaRow, ["epa", "total_points", "mean"]) ??
             epa?.total_points?.mean ??
             nestedFiniteRecordNumber(epaRow, ["epa", "breakdown", "total_points"]) ??
+            nestedFiniteRecordNumber(epaRow, [
+              "epa",
+              "breakdown",
+              "total_points",
+              "mean",
+            ]) ??
             firstFiniteRecordNumber(epaRow, [
               "totalEpa",
               "epa",
@@ -521,7 +537,15 @@ export const refreshStatsInternal = internalAction({
               "epa_mean",
             ]),
           autoEpa:
+            nestedFiniteRecordNumber(epaRow, ["epa", "auto_points"]) ??
+            nestedFiniteRecordNumber(epaRow, ["epa", "auto_points", "mean"]) ??
             nestedFiniteRecordNumber(epaRow, ["epa", "breakdown", "auto_points"]) ??
+            nestedFiniteRecordNumber(epaRow, [
+              "epa",
+              "breakdown",
+              "auto_points",
+              "mean",
+            ]) ??
             epa?.auto_points?.mean ??
             firstFiniteRecordNumber(epaRow, [
               "autoEpa",
@@ -530,7 +554,15 @@ export const refreshStatsInternal = internalAction({
               "epa_auto_points",
             ]),
           teleopEpa:
+            nestedFiniteRecordNumber(epaRow, ["epa", "teleop_points"]) ??
+            nestedFiniteRecordNumber(epaRow, ["epa", "teleop_points", "mean"]) ??
             nestedFiniteRecordNumber(epaRow, ["epa", "breakdown", "teleop_points"]) ??
+            nestedFiniteRecordNumber(epaRow, [
+              "epa",
+              "breakdown",
+              "teleop_points",
+              "mean",
+            ]) ??
             epa?.teleop_points?.mean ??
             firstFiniteRecordNumber(epaRow, [
               "teleopEpa",
@@ -539,7 +571,15 @@ export const refreshStatsInternal = internalAction({
               "epa_teleop_points",
             ]),
           endgameEpa:
+            nestedFiniteRecordNumber(epaRow, ["epa", "endgame_points"]) ??
+            nestedFiniteRecordNumber(epaRow, ["epa", "endgame_points", "mean"]) ??
             nestedFiniteRecordNumber(epaRow, ["epa", "breakdown", "endgame_points"]) ??
+            nestedFiniteRecordNumber(epaRow, [
+              "epa",
+              "breakdown",
+              "endgame_points",
+              "mean",
+            ]) ??
             epa?.endgame_points?.mean ??
             firstFiniteRecordNumber(epaRow, [
               "endgameEpa",
