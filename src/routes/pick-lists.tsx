@@ -271,7 +271,7 @@ function PickBoard({
   }[]
   readOnly: boolean
 }) {
-  const moveTeam = useMutation(api.pickLists.moveTeam)
+  const moveTeams = useMutation(api.pickLists.moveTeams)
   const [teamSearch, setTeamSearch] = useState("")
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -337,16 +337,14 @@ function PickBoard({
     targetItems.splice(insertAt, 0, { ...current, tier: targetTier })
 
     try {
-      await Promise.all(
-        targetItems.map((item, rank) =>
-          moveTeam({
-            pickListId: listId,
-            teamNumber: item.teamNumber,
-            tier: targetTier,
-            rank,
-          }),
-        ),
-      )
+      await moveTeams({
+        pickListId: listId,
+        placements: targetItems.map((item, rank) => ({
+          teamNumber: item.teamNumber,
+          tier: targetTier,
+          rank,
+        })),
+      })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Move failed")
     }

@@ -128,6 +128,51 @@ export const moveTeam = mutation({
   },
 })
 
+export const moveTeams = mutation({
+  args: {
+    pickListId: v.id("pickLists"),
+    placements: v.array(
+      v.object({
+        teamNumber: v.number(),
+        tier: pickTierValidator,
+        rank: v.number(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx)
+    const list = await ctx.db.get(args.pickListId)
+    if (!list) throw new Error("Pick list not found")
+    if (list.kind === "primary" && user.role !== "admin") {
+      throw new Error("Unauthorized")
+    }
+    if (list.kind === "personal" && list.ownerToken !== user.tokenIdentifier) {
+      throw new Error("Unauthorized")
+    }
+
+    const now = Date.now()
+    for (const placement of args.placements) {
+      const existing = await ctx.db
+        .query("pickListItems")
+        .withIndex("by_pickListId_and_teamNumber", (q) =>
+          q.eq("pickListId", args.pickListId).eq("teamNumber", placement.teamNumber),
+        )
+        .unique()
+      const doc = {
+        pickListId: args.pickListId,
+        eventId: list.eventId,
+        teamNumber: placement.teamNumber,
+        tier: placement.tier,
+        rank: Math.max(0, Math.trunc(placement.rank)),
+        updatedAt: now,
+      }
+      if (existing) await ctx.db.patch(existing._id, doc)
+      else await ctx.db.insert("pickListItems", doc)
+    }
+    await ctx.db.patch(args.pickListId, { updatedAt: now })
+  },
+})
+
 export const runConsensus = mutation({
   args: { eventId: v.id("events") },
   handler: async (ctx, args) => {
