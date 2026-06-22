@@ -2,7 +2,7 @@ import { v } from "convex/values"
 import type { MutationCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
-import { requireAdminFromDb, requireUser } from "./lib/authz"
+import { requireAdminFromDb, requireUser, requireUserFromDb } from "./lib/authz"
 import { pickTierValidator } from "./validators"
 
 const tierWeights = {
@@ -140,24 +140,30 @@ export const moveTeams = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    let user: Awaited<ReturnType<typeof requireUserFromDb>>
+    try {
+      user = await requireUserFromDb(ctx)
+    } catch {
+      return { ok: false, error: "Sign in again before editing pick lists" }
+    }
+
     const list = await ctx.db.get(args.pickListId)
-    if (!list) throw new Error("Pick list not found")
+    if (!list) return { ok: false, error: "Pick list not found" }
     if (list.kind === "primary" && user.role !== "admin") {
-      throw new Error("Unauthorized")
+      return { ok: false, error: "Admin only: primary pick list is read-only" }
     }
     if (list.kind === "personal" && list.ownerToken !== user.tokenIdentifier) {
-      throw new Error("Unauthorized")
+      return { ok: false, error: "You can only edit your own personal pick list" }
     }
 
     const now = Date.now()
     for (const placement of args.placements) {
-      const existing = await ctx.db
+      const existingItems = await ctx.db
         .query("pickListItems")
         .withIndex("by_pickListId_and_teamNumber", (q) =>
           q.eq("pickListId", args.pickListId).eq("teamNumber", placement.teamNumber),
         )
-        .unique()
+        .take(10)
       const doc = {
         pickListId: args.pickListId,
         eventId: list.eventId,
@@ -166,10 +172,15 @@ export const moveTeams = mutation({
         rank: Math.max(0, Math.trunc(placement.rank)),
         updatedAt: now,
       }
+      const [existing, ...duplicates] = existingItems
+      for (const duplicate of duplicates) {
+        await ctx.db.delete(duplicate._id)
+      }
       if (existing) await ctx.db.patch(existing._id, doc)
       else await ctx.db.insert("pickListItems", doc)
     }
     await ctx.db.patch(args.pickListId, { updatedAt: now })
+    return { ok: true }
   },
 })
 

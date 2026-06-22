@@ -337,7 +337,7 @@ function PickBoard({
     targetItems.splice(insertAt, 0, { ...current, tier: targetTier })
 
     try {
-      await moveTeams({
+      const result = await moveTeams({
         pickListId: listId,
         placements: targetItems.map((item, rank) => ({
           teamNumber: item.teamNumber,
@@ -345,6 +345,9 @@ function PickBoard({
           rank,
         })),
       })
+      if (!result.ok) {
+        toast.error(result.error)
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Move failed")
     }
