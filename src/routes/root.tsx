@@ -5,6 +5,7 @@ import { useTheme } from "next-themes"
 import { NavLink, Outlet } from "react-router"
 import { api } from "../../convex/_generated/api"
 import { Button } from "@/components/ui/button"
+import { eventLabel, useActiveEvent } from "@/lib/active-event"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,7 +54,7 @@ export function RootRoute() {
   const { setTheme } = useTheme()
   const { signOut } = useAuthActions()
   const me = useQuery(api.members.me)
-  const activeEvent = useQuery(api.events.active)
+  const { activeEvent } = useActiveEvent()
 
   return (
     <div className="min-h-svh bg-background text-foreground">
@@ -76,7 +77,7 @@ export function RootRoute() {
           <div className="min-w-0">
             <p className="text-sm font-semibold">2026 Scouting</p>
             <p className="truncate text-xs text-muted-foreground">
-              {activeEvent ? activeEvent.eventKey : "No event imported"}
+              {activeEvent ? eventLabel(activeEvent) : "No event imported"}
             </p>
           </div>
           <Separator orientation="vertical" className="hidden h-5 md:block" />

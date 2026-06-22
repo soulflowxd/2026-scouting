@@ -16,6 +16,7 @@ import type * as lib_authz from "../lib/authz.js";
 import type * as lib_env from "../lib/env.js";
 import type * as matchScouting from "../matchScouting.js";
 import type * as members from "../members.js";
+import type * as nexus from "../nexus.js";
 import type * as pickLists from "../pickLists.js";
 import type * as pit from "../pit.js";
 import type * as teams from "../teams.js";
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   "lib/env": typeof lib_env;
   matchScouting: typeof matchScouting;
   members: typeof members;
+  nexus: typeof nexus;
   pickLists: typeof pickLists;
   pit: typeof pit;
   teams: typeof teams;

@@ -3,6 +3,7 @@ import { Search } from "lucide-react"
 import { useMemo, useState } from "react"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -12,26 +13,36 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
+import { eventLabel, useActiveEvent } from "@/lib/active-event"
 import { climbLabels, tierLabels } from "@/lib/labels"
 
+type TeamSort = "teamNumber" | "epa" | "averageRp"
+type SortDirection = "asc" | "desc"
+
 export function TeamsRoute() {
-  const activeEvent = useQuery(api.events.active)
+  const { activeEvent } = useActiveEvent()
   const teams = useQuery(
     api.teams.list,
     activeEvent ? { eventId: activeEvent._id } : "skip",
   )
   const [search, setSearch] = useState("")
   const [selectedTeam, setSelectedTeam] = useState<number | null>(null)
+  const [sortBy, setSortBy] = useState<TeamSort>("teamNumber")
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase()
-    return (teams ?? []).filter(
-      (team) =>
-        !needle ||
-        String(team.teamNumber).includes(needle) ||
-        team.nickname.toLowerCase().includes(needle),
-    )
-  }, [search, teams])
+    return (teams ?? [])
+      .filter(
+        (team) =>
+          !needle ||
+          String(team.teamNumber).includes(needle) ||
+          team.nickname.toLowerCase().includes(needle),
+      )
+      .sort((a, b) => sortTeams(a, b, sortBy, sortDirection))
+  }, [search, sortBy, sortDirection, teams])
+  const hasEpa = (teams ?? []).some((team) => team.epa !== undefined)
+  const hasRp = (teams ?? []).some((team) => team.averageRp !== undefined)
 
   if (!activeEvent) {
     return <EmptyEvent />
@@ -43,7 +54,7 @@ export function TeamsRoute() {
         <div>
           <h1 className="text-2xl font-semibold">Teams</h1>
           <p className="text-sm text-muted-foreground">
-            {filtered.length} teams at {activeEvent.eventKey}
+            {filtered.length} teams at {eventLabel(activeEvent)}
           </p>
         </div>
         <label className="relative">
@@ -56,6 +67,39 @@ export function TeamsRoute() {
           />
         </label>
       </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium">Sort</span>
+        {teamSortOptions.map((option) => (
+          <Button
+            key={option.value}
+            type="button"
+            size="sm"
+            variant={sortBy === option.value ? "default" : "outline"}
+            onClick={() => setSortBy(option.value)}
+          >
+            {option.label}
+          </Button>
+        ))}
+        <span className="ml-2 text-sm font-medium">Order</span>
+        {sortDirectionOptions.map((option) => (
+          <Button
+            key={option.value}
+            type="button"
+            size="sm"
+            variant={sortDirection === option.value ? "default" : "outline"}
+            onClick={() => setSortDirection(option.value)}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
+      {(!hasEpa || !hasRp) && (
+        <div className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+          {!hasEpa && <p>No current-event/current-year Statbotics EPA imported yet.</p>}
+          {!hasRp && <p>No RP data imported yet for this event.</p>}
+          <p>EPA/RP sort changes once those fields have numeric values.</p>
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {filtered.map((team) => (
           <button
@@ -74,6 +118,8 @@ export function TeamsRoute() {
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm">
+              <Metric label="EPA" value={fmt(team.epa)} />
+              <Metric label="Avg RP" value={fmt(team.averageRp)} />
               <Metric label="Pit" value={team.pitScouted ? "Scouted" : "Not scouted"} />
               <Metric label="Reports" value={String(team.matchReportCount)} />
               <Metric label="Driver" value={String(team.averageDriverRating)} />
@@ -196,6 +242,35 @@ function TeamDetailDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+const teamSortOptions: { label: string; value: TeamSort }[] = [
+  { label: "Team #", value: "teamNumber" },
+  { label: "EPA", value: "epa" },
+  { label: "RP", value: "averageRp" },
+]
+
+const sortDirectionOptions: { label: string; value: SortDirection }[] = [
+  { label: "Low to high", value: "asc" },
+  { label: "High to low", value: "desc" },
+]
+
+function sortTeams(
+  a: { teamNumber: number; epa?: number; averageRp?: number },
+  b: { teamNumber: number; epa?: number; averageRp?: number },
+  sortBy: TeamSort,
+  direction: SortDirection,
+) {
+  const multiplier = direction === "asc" ? 1 : -1
+  if (sortBy === "teamNumber") return (a.teamNumber - b.teamNumber) * multiplier
+  const aValue = a[sortBy]
+  const bValue = b[sortBy]
+  if (aValue === undefined && bValue === undefined) {
+    return (a.teamNumber - b.teamNumber) * multiplier
+  }
+  if (aValue === undefined) return 1
+  if (bValue === undefined) return -1
+  return (aValue - bValue) * multiplier || (a.teamNumber - b.teamNumber)
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

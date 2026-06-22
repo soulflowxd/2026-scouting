@@ -63,9 +63,14 @@ export async function requireAdmin(ctx: AuthOnlyCtx) {
 export async function requireUserFromDb(ctx: QueryCtx | MutationCtx) {
   const user = await requireUser(ctx)
   const authUserId = await getAuthUserId(ctx)
-  const authUser = authUserId
-    ? await ctx.db.get(authUserId as Id<"users">)
-    : null
+  let authUser = null
+  if (authUserId) {
+    try {
+      authUser = await ctx.db.get(authUserId as Id<"users">)
+    } catch {
+      authUser = null
+    }
+  }
   const email =
     typeof authUser?.email === "string" ? authUser.email : user.email
   const role = email

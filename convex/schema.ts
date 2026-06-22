@@ -38,8 +38,11 @@ export default defineSchema({
     importMessage: v.optional(v.string()),
     importedAt: v.optional(v.number()),
     statsRefreshedAt: v.optional(v.number()),
+    activeAt: v.optional(v.number()),
     createdByToken: v.string(),
-  }).index("by_eventKey", ["eventKey"]),
+  })
+    .index("by_eventKey", ["eventKey"])
+    .index("by_activeAt", ["activeAt"]),
   teams: defineTable({
     eventId: v.id("events"),
     tbaTeamKey: v.string(),

@@ -2,7 +2,7 @@ import { v } from "convex/values"
 import { internal } from "./_generated/api"
 import { action, internalAction, internalMutation, internalQuery } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
-import { readEnv, readOptionalEnv } from "./lib/env"
+import { readEnv } from "./lib/env"
 
 type TbaTeam = {
   key: string
@@ -11,6 +11,10 @@ type TbaTeam = {
   city?: string
   state_prov?: string
   country?: string
+}
+
+type TbaEvent = {
+  name?: string
 }
 
 type TbaMatch = {
@@ -35,13 +39,33 @@ type TbaStatus = {
   }
 }
 
-type StatboticsTeamEvent = {
+type TbaRankings = {
+  rankings?: {
+    team_key: string
+    rank?: number
+    record?: { wins?: number; losses?: number; ties?: number }
+    sort_orders?: number[]
+  }[]
+}
+
+type StatboticsTeamEvent = Record<string, unknown> & {
   epa?: {
     total_points?: { mean?: number }
     auto_points?: { mean?: number }
     teleop_points?: { mean?: number }
     endgame_points?: { mean?: number }
   }
+}
+
+type StatboticsCsvRow = {
+  team: number
+  event?: string
+  year?: number
+  totalEpa?: number
+  autoEpa?: number
+  teleopEpa?: number
+  endgameEpa?: number
+  averageRp?: number
 }
 
 function omitUndefined<T extends Record<string, unknown>>(input: T) {
@@ -61,8 +85,170 @@ async function fetchJson<T>(
   return (await response.json()) as T
 }
 
+async function fetchText(url: string) {
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`${url} failed: ${response.status}`)
+  return await response.text()
+}
+
 function teamNumberFromKey(teamKey: string) {
   return Number(teamKey.replace(/^frc/, ""))
+}
+
+function finiteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+function nestedFiniteRecordNumber(
+  row: Record<string, unknown> | null | undefined,
+  path: string[],
+) {
+  let current: unknown = row
+  for (const key of path) {
+    if (!current || typeof current !== "object") return undefined
+    current = (current as Record<string, unknown>)[key]
+  }
+  return finiteNumber(current)
+}
+
+function firstFiniteRecordNumber(
+  row: Record<string, unknown> | null | undefined,
+  keys: string[],
+) {
+  if (!row) return undefined
+  for (const key of keys) {
+    const value = finiteNumber(row[key])
+    if (value !== undefined) return value
+  }
+  return undefined
+}
+
+function eventYear(eventKey: string) {
+  const year = Number(eventKey.slice(0, 4))
+  return Number.isInteger(year) ? year : null
+}
+
+function parseCsvLine(line: string) {
+  const values: string[] = []
+  let current = ""
+  let quoted = false
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+    if (char === '"') {
+      if (quoted && line[index + 1] === '"') {
+        current += '"'
+        index += 1
+      } else {
+        quoted = !quoted
+      }
+    } else if (char === "," && !quoted) {
+      values.push(current)
+      current = ""
+    } else {
+      current += char
+    }
+  }
+  values.push(current)
+  return values
+}
+
+function csvNumber(value: string | undefined) {
+  if (!value || value === "NULL") return undefined
+  const number = Number(value)
+  return Number.isFinite(number) ? number : undefined
+}
+
+function parseStatboticsTeamEventCsv(
+  csv: string,
+  eventKey: string,
+  teamNumbers: Set<number>,
+): StatboticsCsvRow[] {
+  const [headerLine, ...lines] = csv.split(/\r?\n/)
+  const headers = parseCsvLine(headerLine)
+  const indexOf = (name: string) => headers.indexOf(name)
+  const teamIndex = indexOf("team")
+  const eventIndex = indexOf("event")
+  const epaIndex = indexOf("epa_end")
+  const autoIndex = indexOf("auto_epa_end")
+  const teleopIndex = indexOf("teleop_epa_end")
+  const endgameIndex = indexOf("endgame_epa_end")
+  const rpIndex = indexOf("rps_per_match")
+  const rows: StatboticsCsvRow[] = []
+  for (const line of lines) {
+    if (!line || !line.includes(eventKey)) continue
+    const values = parseCsvLine(line)
+    if (values[eventIndex] !== eventKey) continue
+    const team = csvNumber(values[teamIndex])
+    if (team === undefined || !teamNumbers.has(team)) continue
+    rows.push({
+      team,
+      event: eventKey,
+      totalEpa: csvNumber(values[epaIndex]),
+      autoEpa: csvNumber(values[autoIndex]),
+      teleopEpa: csvNumber(values[teleopIndex]),
+      endgameEpa: csvNumber(values[endgameIndex]),
+      averageRp: csvNumber(values[rpIndex]),
+    })
+  }
+  return rows
+}
+
+function parseStatboticsTeamYearCsv(
+  csv: string,
+  year: number,
+  teamNumbers: Set<number>,
+): StatboticsCsvRow[] {
+  const [headerLine, ...lines] = csv.split(/\r?\n/)
+  const headers = parseCsvLine(headerLine)
+  const indexOf = (name: string) => headers.indexOf(name)
+  const yearIndex = indexOf("year")
+  const teamIndex = indexOf("team")
+  const epaIndex = indexOf("epa_end")
+  const autoIndex = indexOf("auto_epa_end")
+  const teleopIndex = indexOf("teleop_epa_end")
+  const endgameIndex = indexOf("endgame_epa_end")
+  const rows: StatboticsCsvRow[] = []
+  for (const line of lines) {
+    if (!line || !line.includes(`,${year},`)) continue
+    const values = parseCsvLine(line)
+    if (csvNumber(values[yearIndex]) !== year) continue
+    const team = csvNumber(values[teamIndex])
+    if (team === undefined || !teamNumbers.has(team)) continue
+    rows.push({
+      team,
+      year,
+      totalEpa: csvNumber(values[epaIndex]),
+      autoEpa: csvNumber(values[autoIndex]),
+      teleopEpa: csvNumber(values[teleopIndex]),
+      endgameEpa: csvNumber(values[endgameIndex]),
+    })
+  }
+  return rows
+}
+
+async function fetchStatboticsCsvRows(
+  eventKey: string,
+  year: number | null,
+  teamNumbers: Set<number>,
+) {
+  try {
+    const csv = await fetchText(
+      "https://raw.githubusercontent.com/avgupta456/statbotics-csvs/main/v2/team_events.csv",
+    )
+    const rows = parseStatboticsTeamEventCsv(csv, eventKey, teamNumbers)
+    if (rows.length > 0) return rows
+  } catch {
+    // REST remains primary; CSV archive is best-effort fallback.
+  }
+  if (!year) return []
+  try {
+    const csv = await fetchText(
+      "https://raw.githubusercontent.com/avgupta456/statbotics-csvs/main/v2/team_years.csv",
+    )
+    return parseStatboticsTeamYearCsv(csv, year, teamNumbers)
+  } catch {
+    return []
+  }
 }
 
 export const importEvent = action({
@@ -83,7 +269,11 @@ export const importEvent = action({
 
     try {
       const headers = { "X-TBA-Auth-Key": tbaKey }
-      const [teams, matches] = await Promise.all([
+      const [event, teams, matches] = await Promise.all([
+        fetchJson<TbaEvent>(
+          `https://www.thebluealliance.com/api/v3/event/${eventKey}`,
+          headers,
+        ),
         fetchJson<TbaTeam[]>(
           `https://www.thebluealliance.com/api/v3/event/${eventKey}/teams`,
           headers,
@@ -109,6 +299,7 @@ export const importEvent = action({
 
       await ctx.runMutation(internal.imports.applyEventImport, {
         eventId,
+        eventName: event.name,
         teams: teams.map((team) =>
           omitUndefined({
             tbaTeamKey: team.key,
@@ -170,6 +361,17 @@ export const refreshStatsInternal = internalAction({
       ccwms?: Record<string, number>
     }>(`https://www.thebluealliance.com/api/v3/event/${eventKey}/oprs`, tbaHeaders)
 
+    let rankings: NonNullable<TbaRankings["rankings"]> = []
+    try {
+      const rankingData = await fetchJson<TbaRankings>(
+        `https://www.thebluealliance.com/api/v3/event/${eventKey}/rankings`,
+        tbaHeaders,
+      )
+      rankings = rankingData.rankings ?? []
+    } catch {
+      rankings = []
+    }
+
     const statuses = await Promise.all(
       eventData.teams.map(async (team) => {
         try {
@@ -184,13 +386,42 @@ export const refreshStatsInternal = internalAction({
       }),
     )
 
-    const statboticsKey = readOptionalEnv("STATBOTICS_API_KEY")
-    const statboticsHeaders: Record<string, string> = statboticsKey
-      ? { Authorization: `Bearer ${statboticsKey}` }
-      : {}
+    const statboticsHeaders: Record<string, string> = {}
 
+    const statboticsYear = eventYear(eventKey)
+    const teamNumbers = new Set(eventData.teams.map((team) => team.teamNumber))
+    let statboticsTeamRows: StatboticsTeamEvent[] = []
+    try {
+      statboticsTeamRows = await fetchJson<StatboticsTeamEvent[]>(
+        `https://api.statbotics.io/v3/team_events?event=${encodeURIComponent(eventKey)}&limit=1000`,
+        statboticsHeaders,
+      )
+    } catch {
+      try {
+        statboticsTeamRows = statboticsYear
+          ? await fetchJson<StatboticsTeamEvent[]>(
+              `https://api.statbotics.io/v3/team_years?year=${statboticsYear}&limit=1000`,
+              statboticsHeaders,
+            )
+          : []
+      } catch {
+        statboticsTeamRows = []
+      }
+    }
+    if (statboticsTeamRows.length === 0) {
+      statboticsTeamRows = await fetchStatboticsCsvRows(
+        eventKey,
+        statboticsYear,
+        teamNumbers,
+      )
+    }
     const epaRows = await Promise.all(
       eventData.teams.map(async (team) => {
+        const batchRow =
+          statboticsTeamRows.find(
+            (row) => Number(row.team) === team.teamNumber,
+          ) ?? null
+        if (batchRow) return { teamNumber: team.teamNumber, row: batchRow }
         try {
           const row = await fetchJson<StatboticsTeamEvent>(
             `https://api.statbotics.io/v3/team_event/${team.teamNumber}/${eventKey}`,
@@ -198,7 +429,17 @@ export const refreshStatsInternal = internalAction({
           )
           return { teamNumber: team.teamNumber, row }
         } catch {
-          return { teamNumber: team.teamNumber, row: null }
+          try {
+            const row = statboticsYear
+              ? await fetchJson<StatboticsTeamEvent>(
+                  `https://api.statbotics.io/v3/team_year/${team.teamNumber}/${statboticsYear}`,
+                  statboticsHeaders,
+                )
+              : null
+            return { teamNumber: team.teamNumber, row }
+          } catch {
+            return { teamNumber: team.teamNumber, row: null }
+          }
         }
       }),
     )
@@ -210,14 +451,24 @@ export const refreshStatsInternal = internalAction({
     }[] = []
     try {
       const rows = await fetchJson<Record<string, unknown>[]>(
-        `https://api.statbotics.io/v3/event/${eventKey}/predictions`,
+        `https://api.statbotics.io/v3/matches?event=${encodeURIComponent(eventKey)}&limit=1000`,
         statboticsHeaders,
       )
       predictions = rows
         .map((row) => {
-          const matchNumber = Number(row.match_number ?? row.matchNumber)
-          const redWinProb = Number(row.red_win_prob ?? row.redWinProb)
-          const blueWinProb = Number(row.blue_win_prob ?? row.blueWinProb)
+          const matchNumber = Number(row.match_number ?? row.matchNumber ?? row.qual)
+          const redWinProb = Number(
+            row.red_win_prob ??
+              row.redWinProb ??
+              row.epa_win_prob ??
+              nestedFiniteRecordNumber(row, ["pred", "red_win_prob"]) ??
+              nestedFiniteRecordNumber(row, ["pred", "redWinProb"]),
+          )
+          const blueWinProb = Number(
+            row.blue_win_prob ??
+              row.blueWinProb ??
+              (Number.isFinite(redWinProb) ? 1 - redWinProb : undefined),
+          )
           return omitUndefined({
             matchNumber,
             redWinProb: Number.isFinite(redWinProb) ? redWinProb : undefined,
@@ -237,11 +488,14 @@ export const refreshStatsInternal = internalAction({
         const status = statuses.find(
           (item) => item.teamNumber === team.teamNumber,
         )?.status
-        const epa = epaRows.find((item) => item.teamNumber === team.teamNumber)
-          ?.row?.epa
-        const record = status?.qual?.ranking?.record
-        const sortOrders = status?.qual?.ranking?.sort_orders ?? []
-        const teamKey = String(team.teamNumber)
+        const ranking = rankings.find((item) => item.team_key === team.tbaTeamKey)
+        const epaRow = epaRows.find((item) => item.teamNumber === team.teamNumber)
+          ?.row
+        const epa = epaRow?.epa
+        const record = ranking?.record ?? status?.qual?.ranking?.record
+        const sortOrders =
+          ranking?.sort_orders ?? status?.qual?.ranking?.sort_orders ?? []
+        const teamKey = team.tbaTeamKey
         return omitUndefined({
           teamNumber: team.teamNumber,
           opr: oprs.oprs?.[teamKey],
@@ -250,11 +504,49 @@ export const refreshStatsInternal = internalAction({
           wins: record?.wins,
           losses: record?.losses,
           ties: record?.ties,
-          averageRp: sortOrders.length > 1 ? sortOrders[1] : undefined,
-          epa: epa?.total_points?.mean,
-          autoEpa: epa?.auto_points?.mean,
-          teleopEpa: epa?.teleop_points?.mean,
-          endgameEpa: epa?.endgame_points?.mean,
+          averageRp:
+            nestedFiniteRecordNumber(epaRow, ["record", "qual", "rps_per_match"]) ??
+            firstFiniteRecordNumber(epaRow, ["averageRp", "rps_per_match"]) ??
+            (sortOrders.length > 0 ? sortOrders[0] : undefined),
+          epa:
+            nestedFiniteRecordNumber(epaRow, ["epa", "total_points"]) ??
+            epa?.total_points?.mean ??
+            nestedFiniteRecordNumber(epaRow, ["epa", "breakdown", "total_points"]) ??
+            firstFiniteRecordNumber(epaRow, [
+              "totalEpa",
+              "epa",
+              "epa_total",
+              "norm_epa",
+              "epa_end",
+              "epa_mean",
+            ]),
+          autoEpa:
+            nestedFiniteRecordNumber(epaRow, ["epa", "breakdown", "auto_points"]) ??
+            epa?.auto_points?.mean ??
+            firstFiniteRecordNumber(epaRow, [
+              "autoEpa",
+              "auto_epa",
+              "epa_auto",
+              "epa_auto_points",
+            ]),
+          teleopEpa:
+            nestedFiniteRecordNumber(epaRow, ["epa", "breakdown", "teleop_points"]) ??
+            epa?.teleop_points?.mean ??
+            firstFiniteRecordNumber(epaRow, [
+              "teleopEpa",
+              "teleop_epa",
+              "epa_teleop",
+              "epa_teleop_points",
+            ]),
+          endgameEpa:
+            nestedFiniteRecordNumber(epaRow, ["epa", "breakdown", "endgame_points"]) ??
+            epa?.endgame_points?.mean ??
+            firstFiniteRecordNumber(epaRow, [
+              "endgameEpa",
+              "endgame_epa",
+              "epa_endgame",
+              "epa_endgame_points",
+            ]),
         })
       }),
       predictions,
@@ -297,6 +589,7 @@ export const beginImport = internalMutation({
       await ctx.db.patch(existing._id, {
         importStatus: "importing",
         importMessage: "Importing event data",
+        activeAt: Date.now(),
       })
       return existing._id
     }
@@ -304,6 +597,7 @@ export const beginImport = internalMutation({
       eventKey: args.eventKey,
       importStatus: "importing",
       importMessage: "Importing event data",
+      activeAt: Date.now(),
       createdByToken: args.createdByToken,
     })
   },
@@ -322,6 +616,7 @@ export const markImportError = internalMutation({
 export const applyEventImport = internalMutation({
   args: {
     eventId: v.id("events"),
+    eventName: v.optional(v.string()),
     teams: v.array(
       v.object({
         tbaTeamKey: v.string(),
@@ -373,11 +668,12 @@ export const applyEventImport = internalMutation({
       }
     }
 
-    await ctx.db.patch(args.eventId, {
+    await ctx.db.patch(args.eventId, omitUndefined({
+      name: args.eventName,
       importStatus: "ready",
       importMessage: `Imported ${args.teams.length} teams and ${args.matches.length} qualification matches`,
       importedAt: Date.now(),
-    })
+    }))
   },
 })
 

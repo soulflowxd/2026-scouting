@@ -22,10 +22,25 @@ function clamp(value: number, min: number, max: number) {
 export const matchesForEvent = query({
   args: { eventId: v.id("events") },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const matches = await ctx.db
       .query("matches")
       .withIndex("by_eventId", (q) => q.eq("eventId", args.eventId))
       .take(500)
+    const stats = await ctx.db
+      .query("externalStats")
+      .withIndex("by_eventId_and_teamNumber", (q) => q.eq("eventId", args.eventId))
+      .take(500)
+    return matches.map((match) => ({
+      ...match,
+      teamStats: [...match.redTeams, ...match.blueTeams].map((teamNumber) => {
+        const stat = stats.find((item) => item.teamNumber === teamNumber)
+        return {
+          teamNumber,
+          epa: stat?.epa,
+          averageRp: stat?.averageRp,
+        }
+      }),
+    }))
   },
 })
 

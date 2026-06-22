@@ -34,6 +34,10 @@ export const list = query({
       .query("pickListItems")
       .withIndex("by_eventId_and_teamNumber", (q) => q.eq("eventId", args.eventId))
       .take(2000)
+    const externalStats = await ctx.db
+      .query("externalStats")
+      .withIndex("by_eventId_and_teamNumber", (q) => q.eq("eventId", args.eventId))
+      .take(500)
 
     return teams
       .sort((a, b) => a.teamNumber - b.teamNumber)
@@ -56,6 +60,9 @@ export const list = query({
         const pickTier =
           pickItems.find((item) => item.teamNumber === team.teamNumber)?.tier ??
           "uncategorized"
+        const stats = externalStats.find(
+          (item) => item.teamNumber === team.teamNumber,
+        )
 
         return {
           ...team,
@@ -65,6 +72,8 @@ export const list = query({
           averageTeleopFuel: Number(teleopAverage.toFixed(1)),
           commonEndgameClimb: bestEndgame,
           pickTier,
+          epa: stats?.epa,
+          averageRp: stats?.averageRp,
         }
       })
   },

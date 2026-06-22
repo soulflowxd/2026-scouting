@@ -1,5 +1,6 @@
-import { useMutation, useQuery } from "convex/react"
-import { useEffect, useState, type ReactNode } from "react"
+import { useAction, useMutation, useQuery } from "convex/react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { MapPinned, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
@@ -9,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { eventLabel, useActiveEvent } from "@/lib/active-event"
 
 type PitFormState = {
   canScoreFuelHub: boolean
@@ -43,12 +45,45 @@ const emptyPitForm: PitFormState = {
 }
 
 export function PitScoutingRoute() {
-  const activeEvent = useQuery(api.events.active)
+  const { activeEvent } = useActiveEvent()
   const teams = useQuery(
     api.teams.list,
     activeEvent ? { eventId: activeEvent._id } : "skip",
   )
   const [selectedTeam, setSelectedTeam] = useState<number | null>(null)
+  const fetchPitMap = useAction(api.nexus.fetchPitMap)
+  const [pitMap, setPitMap] = useState<{
+    eventKey: string
+    pits: { teamNumber: number; location: string }[]
+    message?: string
+  } | null>(null)
+  const [pitMapError, setPitMapError] = useState<string | null>(null)
+  const [pitMapLoading, setPitMapLoading] = useState(false)
+
+  const pitByTeam = useMemo(
+    () => new Map((pitMap?.pits ?? []).map((pit) => [pit.teamNumber, pit.location])),
+    [pitMap],
+  )
+
+  const loadPitMap = useCallback(async (eventId: Id<"events">) => {
+    setPitMapLoading(true)
+    setPitMapError(null)
+    try {
+      const result = await fetchPitMap({ eventId })
+      setPitMap(result)
+    } catch (error) {
+      setPitMap(null)
+      setPitMapError(error instanceof Error ? error.message : "Could not load Nexus pit map")
+    } finally {
+      setPitMapLoading(false)
+    }
+  }, [fetchPitMap])
+
+  useEffect(() => {
+    if (activeEvent) {
+      void loadPitMap(activeEvent._id)
+    }
+  }, [activeEvent, loadPitMap])
 
   if (!activeEvent) {
     return <EmptyEvent />
@@ -59,26 +94,72 @@ export function PitScoutingRoute() {
       <div>
         <h1 className="text-2xl font-semibold">Pit Scouting</h1>
         <p className="text-sm text-muted-foreground">
-          Pick a team, scout with taps, avoid long typing.
+          {eventLabel(activeEvent)}. Pick a team, scout with taps, avoid long typing.
         </p>
       </div>
       {selectedTeam === null ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {(teams ?? []).map((team) => (
-            <button
-              key={team._id}
-              type="button"
-              onClick={() => setSelectedTeam(team.teamNumber)}
-              className="grid gap-2 rounded-xl border bg-card p-4 text-left shadow-sm"
-            >
-              <p className="text-xl font-semibold">{team.teamNumber}</p>
-              <p className="text-sm text-muted-foreground">{team.nickname}</p>
-              <span className={team.pitScouted ? "text-sm text-primary" : "text-sm text-muted-foreground"}>
-                {team.pitScouted ? "Scouted" : "Not scouted"}
-              </span>
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="grid gap-3 rounded-xl border bg-card p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <MapPinned className="size-5 text-primary" aria-hidden="true" />
+                <div>
+                  <h2 className="font-semibold">Nexus pit map</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {pitMapLoading
+                      ? "Loading from FRC Nexus..."
+                      : pitMap?.pits.length
+                        ? `${pitMap.pits.length} pit locations loaded for ${pitMap.eventKey}.`
+                        : pitMapError ?? pitMap?.message ?? "No pit map loaded yet."}
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void loadPitMap(activeEvent._id)}
+                disabled={pitMapLoading}
+              >
+                <RefreshCw className={pitMapLoading ? "size-4 animate-spin" : "size-4"} aria-hidden="true" />
+                Refresh
+              </Button>
+            </div>
+            {pitMap?.pits.length ? (
+              <div className="grid max-h-56 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-4">
+                {pitMap.pits.map((pit) => (
+                  <div key={`${pit.teamNumber}-${pit.location}`} className="rounded-lg border bg-background px-3 py-2">
+                    <p className="font-semibold">{pit.teamNumber}</p>
+                    <p className="text-sm text-muted-foreground">{pit.location}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {(teams ?? []).map((team) => {
+              const pitLocation = pitByTeam.get(team.teamNumber)
+              return (
+                <button
+                  key={team._id}
+                  type="button"
+                  onClick={() => setSelectedTeam(team.teamNumber)}
+                  className="grid gap-2 rounded-xl border bg-card p-4 text-left shadow-sm"
+                >
+                  <p className="text-xl font-semibold">{team.teamNumber}</p>
+                  <p className="text-sm text-muted-foreground">{team.nickname}</p>
+                  {pitLocation ? (
+                    <span className="rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-sm font-medium text-primary">
+                      Pit {pitLocation}
+                    </span>
+                  ) : null}
+                  <span className={team.pitScouted ? "text-sm text-primary" : "text-sm text-muted-foreground"}>
+                    {team.pitScouted ? "Scouted" : "Not scouted"}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </>
       ) : (
         <PitForm
           eventId={activeEvent._id}

@@ -1,26 +1,30 @@
 import {
   DndContext,
   type DragEndEvent,
+  KeyboardSensor,
   PointerSensor,
-  closestCenter,
+  TouchSensor,
+  rectIntersection,
   useDroppable,
   useSensor,
   useSensors,
 } from "@dnd-kit/core"
 import {
   SortableContext,
+  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { useMutation, useQuery } from "convex/react"
-import { GripVertical, Plus } from "lucide-react"
-import { useMemo, useState } from "react"
+import { ArrowLeft, ClipboardList, GitMerge, GripVertical, Plus, Search } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { eventLabel, useActiveEvent } from "@/lib/active-event"
 import { tierLabels } from "@/lib/labels"
 
 const columns = ["tier1", "tier2", "tier3", "doNotPick", "uncategorized"] as const
@@ -33,7 +37,7 @@ type BoardItem = {
 }
 
 export function PickListsRoute() {
-  const activeEvent = useQuery(api.events.active)
+  const { activeEvent } = useActiveEvent()
   const teams = useQuery(
     api.teams.list,
     activeEvent ? { eventId: activeEvent._id } : "skip",
@@ -54,9 +58,17 @@ export function PickListsRoute() {
   const [selectedListId, setSelectedListId] = useState<string | null>(null)
   const [newName, setNewName] = useState("My pick list")
 
+  const primaryList = useMemo(
+    () => lists?.find((list) => list.kind === "primary") ?? null,
+    [lists],
+  )
+  const personalLists = useMemo(
+    () => (lists ?? []).filter((list) => list.kind === "personal"),
+    [lists],
+  )
   const selectedList = useMemo(() => {
-    if (!lists?.length) return null
-    return lists.find((list) => list._id === selectedListId) ?? lists[0]
+    if (!lists?.length || !selectedListId) return null
+    return lists.find((list) => list._id === selectedListId) ?? null
   }, [lists, selectedListId])
 
   if (!activeEvent) return <EmptyEvent />
@@ -103,88 +115,144 @@ export function PickListsRoute() {
     }
   }
 
-  return (
-    <section className="grid gap-4">
-      <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
-        <div>
-          <h1 className="text-2xl font-semibold">Pick Lists</h1>
-          <p className="text-sm text-muted-foreground">
-            Personal boards plus admin primary list.
-          </p>
+  if (selectedList) {
+    return (
+      <section className="flex h-[calc(100svh-5.5rem)] min-h-0 flex-col gap-4 overflow-hidden sm:h-[calc(100svh-6.5rem)]">
+        <div className="flex shrink-0 items-center justify-between gap-3">
+          <div className="min-w-0">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedListId(null)}>
+              <ArrowLeft aria-hidden="true" />
+              Pick list home
+            </Button>
+            <h1 className="mt-2 truncate text-2xl font-semibold">{selectedList.name}</h1>
+          </div>
+          <span className="shrink-0 rounded-md border px-2 py-1 text-xs text-muted-foreground">
+            {selectedList.kind === "primary" ? "Primary" : "Personal"}
+          </span>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Input
-            value={newName}
-            onChange={(event) => setNewName(event.target.value)}
-            className="w-44"
-          />
-          <Button type="button" onClick={() => void onCreatePersonal()}>
-            <Plus aria-hidden="true" />
-            New personal
-          </Button>
-          {me?.role === "admin" && (
-            <>
-              <Button type="button" variant="outline" onClick={() => void onEnsurePrimary()}>
-                Primary
-              </Button>
-              <Button type="button" variant="outline" onClick={() => void onRunConsensus()}>
-                Run consensus
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void onApplyConsensus()}
-                disabled={!latestConsensus}
-              >
-                Apply consensus
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {(lists ?? []).map((list) => (
-          <Button
-            key={list._id}
-            type="button"
-            variant={selectedList?._id === list._id ? "default" : "outline"}
-            onClick={() => setSelectedListId(list._id)}
-          >
-            {list.name}
-          </Button>
-        ))}
-      </div>
-      {selectedList ? (
         <PickBoard
           listId={selectedList._id}
           items={selectedList.items}
           teams={teams ?? []}
           readOnly={selectedList.kind === "primary" && me?.role !== "admin"}
         />
-      ) : (
-        <div className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">
-          Create a personal pick list to start.
+      </section>
+    )
+  }
+
+  return (
+    <section className="flex h-[calc(100svh-5.5rem)] min-h-0 flex-col gap-4 overflow-hidden sm:h-[calc(100svh-6.5rem)]">
+      <div className="shrink-0 rounded-xl border bg-card p-4 shadow-sm">
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <ClipboardList className="size-4" aria-hidden="true" />
+          Pick Lists
+        </p>
+        <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">
+          Build personal boards and merge the best one.
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">{eventLabel(activeEvent)}</p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,2fr)]">
+          <Input
+            value={newName}
+            onChange={(event) => setNewName(event.target.value)}
+            placeholder="Drive team list"
+          />
+          <Button
+            type="button"
+            className="bg-neutral-950 text-white hover:bg-neutral-800"
+            onClick={() => void onCreatePersonal()}
+          >
+            <Plus aria-hidden="true" />
+            New personal
+          </Button>
         </div>
-      )}
-      {latestConsensus && (
-        <div className="rounded-xl border bg-card p-4">
-          <h2 className="font-medium">Latest consensus</h2>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {latestConsensus.items.slice(0, 12).map((item) => (
-              <div key={item._id} className="rounded-lg bg-muted p-2 text-sm">
-                <p className="font-medium">{item.teamNumber}</p>
-                <p className="text-muted-foreground">
-                  {tierLabels[item.suggestedTier]} · {item.score}
-                </p>
-              </div>
-            ))}
+      </div>
+
+      <div className="grid min-h-0 flex-1 gap-4 overflow-hidden lg:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (primaryList) setSelectedListId(primaryList._id)
+            else void onEnsurePrimary()
+          }}
+          className="grid min-h-48 content-end rounded-xl border bg-card p-4 text-left shadow-sm transition-colors hover:bg-muted/40"
+        >
+          <ClipboardList className="size-6 text-muted-foreground" aria-hidden="true" />
+          <div className="mt-10">
+            <h2 className="text-lg font-semibold">Primary pick list</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              View and edit the shared primary board.
+            </p>
+          </div>
+        </button>
+
+        <div className="grid min-h-48 rounded-xl border bg-card p-4 shadow-sm">
+          {personalLists.length ? (
+            <div className="grid content-start gap-2 overflow-y-auto pr-1">
+              {personalLists.map((list) => (
+                <button
+                  key={list._id}
+                  type="button"
+                  onClick={() => setSelectedListId(list._id)}
+                  className="rounded-lg border bg-background px-3 py-2 text-left text-sm font-medium shadow-sm transition-colors hover:bg-muted"
+                >
+                  {list.name}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="grid place-items-center text-center text-sm font-medium text-muted-foreground">
+              Create a personal pick list above to open a full-screen board.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="shrink-0 rounded-xl border bg-card p-4 shadow-sm">
+        <div className="flex items-start gap-2">
+          <GitMerge className="mt-0.5 size-5 text-muted-foreground" aria-hidden="true" />
+          <div>
+            <h2 className="font-semibold">Consensus merge</h2>
+            <p className="text-sm text-muted-foreground">
+              Select personal boards to preview or apply to primary.
+            </p>
           </div>
         </div>
-      )}
+        <div className="mt-4 grid gap-3">
+          <select className="h-9 rounded-lg border border-input bg-background px-3 text-sm">
+            {personalLists.length ? (
+              personalLists.map((list) => (
+                <option key={list._id} value={list._id}>
+                  {list.name}
+                </option>
+              ))
+            ) : (
+              <option>No personal pick lists</option>
+            )}
+          </select>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => void onRunConsensus()}
+              disabled={me?.role !== "admin" || !personalLists.length}
+            >
+              Preview
+            </Button>
+            <Button
+              type="button"
+              className="bg-neutral-500 text-white hover:bg-neutral-600"
+              onClick={() => void onApplyConsensus()}
+              disabled={me?.role !== "admin" || !latestConsensus}
+            >
+              Apply to primary
+            </Button>
+          </div>
+        </div>
+      </div>
     </section>
   )
 }
-
 function PickBoard({
   listId,
   items,
@@ -204,7 +272,16 @@ function PickBoard({
   readOnly: boolean
 }) {
   const moveTeam = useMutation(api.pickLists.moveTeam)
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+  const [teamSearch, setTeamSearch] = useState("")
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 120, tolerance: 8 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  )
   const boardItems = useMemo(() => {
     const itemMap = new Map(items.map((item) => [item.teamNumber, item]))
     return teams.map((team, index) => ({
@@ -216,19 +293,18 @@ function PickBoard({
       }),
     }))
   }, [items, teams])
-
-  async function moveTeamToTier(teamNumber: number, tier: Tier, rank?: number) {
-    const targetItems = boardItems
-      .filter((item) => item.tier === tier && item.teamNumber !== teamNumber)
-      .sort((a, b) => a.rank - b.rank)
-    const targetRank = rank ?? targetItems.length
-    await moveTeam({
-      pickListId: listId,
-      teamNumber,
-      tier,
-      rank: targetRank,
-    })
-  }
+  const normalizedSearch = teamSearch.trim().toLowerCase()
+  const firstSearchMatch = useMemo(() => {
+    if (!normalizedSearch) return null
+    for (const tier of columns) {
+      const match = boardItems
+        .filter((item) => item.tier === tier)
+        .sort((a, b) => a.rank - b.rank)
+        .find((item) => teamMatchesSearch(item, normalizedSearch))
+      if (match) return match.teamNumber
+    }
+    return null
+  }, [boardItems, normalizedSearch])
 
   async function onDragEnd(event: DragEndEvent) {
     if (readOnly) return
@@ -277,21 +353,42 @@ function PickBoard({
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => void onDragEnd(event)}>
-      <div className="grid gap-3 lg:grid-cols-5">
-        {columns.map((tier) => (
-          <PickColumn
-            key={tier}
-            tier={tier}
-            readOnly={readOnly}
-            items={boardItems
-              .filter((item) => item.tier === tier)
-              .sort((a, b) => a.rank - b.rank)}
-            onMove={(teamNumber, targetTier) => {
-              void moveTeamToTier(teamNumber, targetTier)
-            }}
-          />
-        ))}
+    <DndContext
+      sensors={sensors}
+      collisionDetection={rectIntersection}
+      onDragEnd={(event) => void onDragEnd(event)}
+    >
+      <div className="flex min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden">
+        <div className="flex shrink-0 justify-end">
+          <div className="relative w-full sm:w-64">
+            <Search
+              className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              type="search"
+              value={teamSearch}
+              onChange={(event) => setTeamSearch(event.target.value)}
+              placeholder="Search teams"
+              className="pl-8"
+              aria-label="Search teams"
+            />
+          </div>
+        </div>
+        <div className="grid min-h-0 flex-1 grid-cols-[repeat(5,minmax(12rem,1fr))] gap-3 overflow-x-auto pb-1">
+          {columns.map((tier) => (
+            <PickColumn
+              key={tier}
+              tier={tier}
+              readOnly={readOnly}
+              searchQuery={normalizedSearch}
+              firstSearchMatch={firstSearchMatch}
+              items={boardItems
+                .filter((item) => item.tier === tier)
+                .sort((a, b) => a.rank - b.rank)}
+            />
+          ))}
+        </div>
       </div>
     </DndContext>
   )
@@ -301,11 +398,13 @@ function PickColumn({
   tier,
   items,
   readOnly,
-  onMove,
+  searchQuery,
+  firstSearchMatch,
 }: {
   tier: Tier
   readOnly: boolean
-  onMove: (teamNumber: number, tier: Tier) => void
+  searchQuery: string
+  firstSearchMatch: number | null
   items: (BoardItem & {
     nickname: string
     pitScouted: boolean
@@ -318,7 +417,7 @@ function PickColumn({
   return (
     <section
       ref={setNodeRef}
-      className="grid min-h-40 content-start gap-2 rounded-xl border bg-card p-3"
+      className="grid h-full min-h-0 grid-rows-[auto_1fr] gap-2 rounded-xl border bg-card p-3"
     >
       <div className="flex items-center justify-between">
         <h2 className="font-medium">{tierLabels[tier]}</h2>
@@ -328,14 +427,19 @@ function PickColumn({
         items={items.map((item) => `team:${item.teamNumber}`)}
         strategy={verticalListSortingStrategy}
       >
-        {items.map((item) => (
-          <PickCard
-            key={item.teamNumber}
-            item={item}
-            readOnly={readOnly}
-            onMove={onMove}
-          />
-        ))}
+        <div className="grid min-h-0 content-start gap-2 overflow-y-auto pr-1">
+          {items.map((item) => (
+            <PickCard
+              key={item.teamNumber}
+              item={item}
+              readOnly={readOnly}
+              isSearchActive={searchQuery.length > 0}
+              isSearchMatch={teamMatchesSearch(item, searchQuery)}
+              shouldScrollIntoView={item.teamNumber === firstSearchMatch}
+              searchQuery={searchQuery}
+            />
+          ))}
+        </div>
       </SortableContext>
     </section>
   )
@@ -344,7 +448,10 @@ function PickColumn({
 function PickCard({
   item,
   readOnly,
-  onMove,
+  isSearchActive,
+  isSearchMatch,
+  shouldScrollIntoView,
+  searchQuery,
 }: {
   item: BoardItem & {
     nickname: string
@@ -354,18 +461,43 @@ function PickCard({
     commonEndgameClimb: string
   }
   readOnly: boolean
-  onMove: (teamNumber: number, tier: Tier) => void
+  isSearchActive: boolean
+  isSearchMatch: boolean
+  shouldScrollIntoView: boolean
+  searchQuery: string
 }) {
+  const cardRef = useRef<HTMLDivElement | null>(null)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: `team:${item.teamNumber}`,
     disabled: readOnly,
   })
+  useEffect(() => {
+    if (!shouldScrollIntoView || !searchQuery) return
+    const frame = window.requestAnimationFrame(() => {
+      cardRef.current?.scrollIntoView({
+        block: "nearest",
+        inline: "nearest",
+        behavior: "smooth",
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [searchQuery, shouldScrollIntoView])
+
   return (
     <div
-      ref={setNodeRef}
+      ref={(node) => {
+        cardRef.current = node
+        setNodeRef(node)
+      }}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`grid gap-2 rounded-lg border bg-background p-3 text-sm shadow-sm ${
+      className={`grid gap-2 rounded-lg border bg-background p-3 text-sm shadow-sm transition-colors ${
         isDragging ? "opacity-60 ring-2 ring-primary" : ""
+      } ${
+        isSearchActive && isSearchMatch
+          ? "border-[#001f54] ring-2 ring-[#001f54]/70"
+          : ""
+      } ${
+        isSearchActive && !isSearchMatch ? "opacity-45" : ""
       }`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -390,21 +522,18 @@ function PickCard({
         <span>Fuel {item.averageTeleopFuel}</span>
         <span>{item.commonEndgameClimb}</span>
       </div>
-      {!readOnly && (
-        <div className="grid grid-cols-5 gap-1">
-          {columns.map((tier) => (
-            <button
-              key={tier}
-              type="button"
-              onClick={() => onMove(item.teamNumber, tier)}
-              className="rounded-md border px-1 py-1 text-[10px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              {tier === "doNotPick" ? "DNP" : tier === "uncategorized" ? "U" : tier.replace("tier", "T")}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
+  )
+}
+
+function teamMatchesSearch(
+  item: { teamNumber: number; nickname: string },
+  searchQuery: string,
+) {
+  if (!searchQuery) return false
+  return (
+    String(item.teamNumber).includes(searchQuery) ||
+    item.nickname.toLowerCase().includes(searchQuery)
   )
 }
 

@@ -1,5 +1,5 @@
 import { useAction, useMutation, useQuery } from "convex/react"
-import { RefreshCw, UploadCloud } from "lucide-react"
+import { CheckCircle2, RefreshCw, UploadCloud } from "lucide-react"
 import { useState, type FormEvent } from "react"
 import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+import { eventLabel, useActiveEvent } from "@/lib/active-event"
 
 export function EventSetupRoute() {
   const me = useQuery(api.members.me)
-  const events = useQuery(api.events.list)
+  const { activeEvent, events, selectActiveEvent } = useActiveEvent()
   const createOrSelect = useMutation(api.events.createOrSelect)
   const importEvent = useAction(api.imports.importEvent)
   const refreshStats = useAction(api.imports.refreshStats)
@@ -25,6 +26,7 @@ export function EventSetupRoute() {
     setPending(true)
     try {
       const result = await importEvent({ eventKey })
+      selectActiveEvent(result.eventId)
       toast.success(`Imported ${result.teamCount} teams`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Import failed")
@@ -45,10 +47,24 @@ export function EventSetupRoute() {
     }
   }
 
+  async function onSelect(id: Id<"events">, key: string) {
+    setPending(true)
+    try {
+      selectActiveEvent(id)
+      await createOrSelect({ eventKey: key })
+      toast.success("Event selected")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Event select failed")
+    } finally {
+      setPending(false)
+    }
+  }
+
   async function onCreateOnly() {
     setPending(true)
     try {
-      await createOrSelect({ eventKey })
+      const id = await createOrSelect({ eventKey })
+      selectActiveEvent(id)
       toast.success("Event selected")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Event setup failed")
@@ -98,28 +114,53 @@ export function EventSetupRoute() {
       </form>
       <Separator />
       <div className="grid gap-3">
-        {events?.map((event) => (
-          <div
-            key={event._id}
-            className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[1fr_auto] sm:items-center"
-          >
-            <div>
-              <p className="font-medium">{event.eventKey}</p>
-              <p className="text-sm text-muted-foreground">
-                {event.importStatus} {event.importMessage ? `- ${event.importMessage}` : ""}
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void onRefresh(event._id)}
-              disabled={pending || event.importStatus !== "ready"}
+        {events?.map((event) => {
+          const isActive = activeEvent?._id === event._id
+          return (
+            <div
+              key={event._id}
+              className={
+                isActive
+                  ? "grid gap-3 rounded-xl border border-primary bg-card p-4 shadow-sm sm:grid-cols-[1fr_auto] sm:items-center"
+                  : "grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[1fr_auto] sm:items-center"
+              }
             >
-              <RefreshCw aria-hidden="true" />
-              Refresh stats
-            </Button>
-          </div>
-        ))}
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium">{eventLabel(event)}</p>
+                  {isActive ? (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
+                      <CheckCircle2 className="size-3" aria-hidden="true" />
+                      Active
+                    </span>
+                  ) : null}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {event.importStatus} {event.importMessage ? `- ${event.importMessage}` : ""}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+                <Button
+                  type="button"
+                  variant={isActive ? "secondary" : "default"}
+                  onClick={() => void onSelect(event._id, event.eventKey)}
+                  disabled={pending || isActive}
+                >
+                  {isActive ? "Selected" : "Select event"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void onRefresh(event._id)}
+                  disabled={pending || event.importStatus !== "ready"}
+                >
+                  <RefreshCw aria-hidden="true" />
+                  Refresh stats
+                </Button>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </section>
   )

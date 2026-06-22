@@ -12,6 +12,10 @@ export const list = query({
 export const active = query({
   args: {},
   handler: async (ctx) => {
+    const selected = (await ctx.db.query("events").withIndex("by_activeAt").order("desc").take(1))[0]
+    if (selected?.activeAt) {
+      return selected
+    }
     return (await ctx.db.query("events").order("desc").take(1))[0] ?? null
   },
 })
@@ -31,12 +35,14 @@ export const createOrSelect = mutation({
       .unique()
 
     if (existing) {
+      await ctx.db.patch(existing._id, { activeAt: Date.now() })
       return existing._id
     }
 
     return await ctx.db.insert("events", {
       eventKey,
       importStatus: "empty",
+      activeAt: Date.now(),
       createdByToken: admin.tokenIdentifier,
     })
   },

@@ -5,18 +5,20 @@ import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
 import { Stepper } from "@/components/stepper"
 import { Button } from "@/components/ui/button"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { eventLabel, useActiveEvent } from "@/lib/active-event"
 import { climbLabels, matchTags } from "@/lib/labels"
 
 type AutoClimb = "none" | "level1"
 type EndgameClimb = "none" | "level1" | "level2" | "level3"
+type TeamSort = "teamNumber" | "epa" | "averageRp"
+type SortDirection = "asc" | "desc"
+
+type TeamStat = {
+  teamNumber: number
+  epa?: number
+  averageRp?: number
+}
 
 type MatchFormState = {
   autoFuel: number
@@ -49,20 +51,27 @@ const emptyMatchForm: MatchFormState = {
 }
 
 export function MatchScoutingRoute() {
-  const activeEvent = useQuery(api.events.active)
+  const { activeEvent } = useActiveEvent()
   const matches = useQuery(
     api.matchScouting.matchesForEvent,
     activeEvent ? { eventId: activeEvent._id } : "skip",
   )
   const [matchNumber, setMatchNumber] = useState<number | null>(null)
   const [teamNumber, setTeamNumber] = useState<number | null>(null)
+  const [teamSort, setTeamSort] = useState<TeamSort>("teamNumber")
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
 
   const selectedMatch = useMemo(
     () => matches?.find((match) => match.matchNumber === matchNumber) ?? null,
     [matchNumber, matches],
   )
   const matchTeams = selectedMatch
-    ? [...selectedMatch.redTeams, ...selectedMatch.blueTeams]
+    ? sortTeamNumbers(
+        [...selectedMatch.redTeams, ...selectedMatch.blueTeams],
+        selectedMatch.teamStats,
+        teamSort,
+        sortDirection,
+      )
     : []
 
   if (!activeEvent) return <EmptyEvent />
@@ -72,43 +81,102 @@ export function MatchScoutingRoute() {
       <div>
         <h1 className="text-2xl font-semibold">Match Scouting</h1>
         <p className="text-sm text-muted-foreground">
-          Claim one robot, then submit one match report.
+          {eventLabel(activeEvent)}. Claim one robot, then submit one match report.
         </p>
       </div>
       <div className="grid gap-3 rounded-xl border bg-card p-4">
-        <Select
-          value={matchNumber === null ? undefined : String(matchNumber)}
-          onValueChange={(value) => {
-            setMatchNumber(Number(value))
-            setTeamNumber(null)
-          }}
-        >
-          <SelectTrigger className="h-11 w-full">
-            <SelectValue placeholder="Select qualification match" />
-          </SelectTrigger>
-          <SelectContent>
-            {(matches ?? [])
-              .sort((a, b) => a.matchNumber - b.matchNumber)
-              .map((match) => (
-                <SelectItem key={match._id} value={String(match.matchNumber)}>
-                  QM{match.matchNumber}
-                </SelectItem>
-              ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium">Sort teams</span>
+          {teamSortOptions.map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              variant={teamSort === option.value ? "default" : "outline"}
+              onClick={() => setTeamSort(option.value)}
+            >
+              {option.label}
+            </Button>
+          ))}
+          <span className="ml-2 text-sm font-medium">Order</span>
+          {sortDirectionOptions.map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              variant={sortDirection === option.value ? "default" : "outline"}
+              onClick={() => setSortDirection(option.value)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+        <div className="grid max-h-72 gap-2 overflow-y-auto pr-1">
+          {(matches ?? [])
+            .sort((a, b) => a.matchNumber - b.matchNumber)
+            .map((match) => (
+              <button
+                key={match._id}
+                type="button"
+                onClick={() => {
+                  setMatchNumber(match.matchNumber)
+                  setTeamNumber(null)
+                }}
+                className={`grid gap-3 rounded-lg border bg-background p-3 text-left shadow-sm transition-colors hover:bg-muted/60 ${
+                  matchNumber === match.matchNumber
+                    ? "border-primary ring-2 ring-primary/30"
+                    : ""
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-semibold">QM{match.matchNumber}</span>
+                  {match.scheduledTime && (
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(match.scheduledTime * 1000).toLocaleTimeString([], {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  )}
+                </div>
+                <AllianceRow
+                  label="Red"
+                  teams={match.redTeams}
+                  teamStats={match.teamStats}
+                  teamSort={teamSort}
+                  sortDirection={sortDirection}
+                  tone="red"
+                />
+                <AllianceRow
+                  label="Blue"
+                  teams={match.blueTeams}
+                  teamStats={match.teamStats}
+                  teamSort={teamSort}
+                  sortDirection={sortDirection}
+                  tone="blue"
+                />
+              </button>
+            ))}
+        </div>
         {selectedMatch && (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-6">
+          <div className="grid gap-2 border-t pt-3">
+            <p className="text-sm font-medium">Choose robot to scout</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-6">
             {matchTeams.map((team) => (
               <Button
                 key={team}
                 type="button"
                 variant={teamNumber === team ? "default" : "outline"}
-                className="h-12"
+                className="h-auto min-h-14 flex-col gap-0.5 py-2"
                 onClick={() => setTeamNumber(team)}
               >
-                {team}
+                <span>{team}</span>
+                <span className="text-[11px] opacity-80">
+                  {teamMetricLabel(selectedMatch.teamStats, team)}
+                </span>
               </Button>
             ))}
+            </div>
           </div>
         )}
       </div>
@@ -121,6 +189,88 @@ export function MatchScoutingRoute() {
       )}
     </section>
   )
+}
+
+function AllianceRow({
+  label,
+  teams,
+  teamStats,
+  teamSort,
+  sortDirection,
+  tone,
+}: {
+  label: string
+  teams: number[]
+  teamStats: TeamStat[]
+  teamSort: TeamSort
+  sortDirection: SortDirection
+  tone: "red" | "blue"
+}) {
+  const sortedTeams = sortTeamNumbers(teams, teamStats, teamSort, sortDirection)
+  return (
+    <div className="grid gap-1">
+      <span
+        className={`text-xs font-medium ${
+          tone === "red" ? "text-red-700" : "text-blue-700"
+        }`}
+      >
+        {label}
+      </span>
+      <div className="flex flex-wrap gap-1.5">
+        {sortedTeams.map((team) => (
+          <span
+            key={team}
+            className={`grid min-w-20 gap-0.5 rounded-md border px-2 py-1 text-xs font-semibold ${
+              tone === "red"
+                ? "border-red-200 bg-red-50 text-red-800"
+                : "border-blue-200 bg-blue-50 text-blue-800"
+            }`}
+          >
+            <span>{team}</span>
+            <span className="font-medium opacity-80">
+              {teamMetricLabel(teamStats, team)}
+            </span>
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const teamSortOptions: { label: string; value: TeamSort }[] = [
+  { label: "Team #", value: "teamNumber" },
+  { label: "EPA", value: "epa" },
+  { label: "RP", value: "averageRp" },
+]
+
+const sortDirectionOptions: { label: string; value: SortDirection }[] = [
+  { label: "Low to high", value: "asc" },
+  { label: "High to low", value: "desc" },
+]
+
+function sortTeamNumbers(
+  teams: number[],
+  stats: TeamStat[],
+  sortBy: TeamSort,
+  direction: SortDirection,
+) {
+  return [...teams].sort((a, b) => {
+    const multiplier = direction === "asc" ? 1 : -1
+    if (sortBy === "teamNumber") return (a - b) * multiplier
+    const aValue = stats.find((item) => item.teamNumber === a)?.[sortBy]
+    const bValue = stats.find((item) => item.teamNumber === b)?.[sortBy]
+    if (aValue === undefined && bValue === undefined) return (a - b) * multiplier
+    if (aValue === undefined) return 1
+    if (bValue === undefined) return -1
+    return (aValue - bValue) * multiplier || a - b
+  })
+}
+
+function teamMetricLabel(stats: TeamStat[], teamNumber: number) {
+  const stat = stats.find((item) => item.teamNumber === teamNumber)
+  const epa = stat?.epa === undefined ? "EPA --" : `EPA ${stat.epa.toFixed(1)}`
+  const rp = stat?.averageRp === undefined ? "RP --" : `RP ${stat.averageRp.toFixed(1)}`
+  return `${epa} / ${rp}`
 }
 
 function MatchForm({
