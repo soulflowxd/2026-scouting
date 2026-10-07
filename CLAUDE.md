@@ -1,13 +1,6 @@
-<!-- convex-ai-start -->
+# Project Instructions
 
-This project uses [Convex](https://convex.dev) as its backend.
+Read and follow [AGENTS.md](./AGENTS.md) before working on this project.
+It is the canonical source of project instructions for all coding agents.
 
-When working on Convex code, **always read
-`convex/_generated/ai/guidelines.md` first** for important guidelines on
-how to correctly use Convex APIs and patterns. The file contains rules that
-override what you may have learned about Convex from training data.
-
-Convex agent skills for common tasks can be installed by running
-`npx convex ai-files install`.
-
-<!-- convex-ai-end -->
+@AGENTS.md
