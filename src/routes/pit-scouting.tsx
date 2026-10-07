@@ -11,8 +11,12 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { eventLabel, useActiveEvent } from "@/lib/active-event"
+import { PitMap } from "@/components/pit-map"
+import { AutoPath, type PathPoint } from "@/components/auto-path"
+import { pitMeasurements, type MeasurementKey } from "@/lib/pit-measurements"
+import type { NexusMap } from "../../convex/lib/nexusMap"
 
-type PitFormState = {
+type PitFormState = Record<MeasurementKey, string> & {
   canScoreFuelHub: boolean
   canIntakeDepot: boolean
   canIntakeFloor: boolean
@@ -25,10 +29,21 @@ type PitFormState = {
   canCrossBump: boolean
   canCrossTrench: boolean
   drivetrain: string
+  swerveType: string
+  tread: string
+  motorBrand: string
+  robotArchitecture: string
+  autoDescription: string
+  autoScore: string
+  teleopScore: string
+  cyclesPerShift: string
+  autoPath: PathPoint[][]
+  bps: string
   notes: string
 }
 
 const emptyPitForm: PitFormState = {
+  fuelCapacity: "", intakeBps: "", framePerimeter: "", frameLength: "", frameWidth: "", weight: "", overallLength: "", overallWidth: "",
   canScoreFuelHub: false,
   canIntakeDepot: false,
   canIntakeFloor: false,
@@ -41,6 +56,16 @@ const emptyPitForm: PitFormState = {
   canCrossBump: false,
   canCrossTrench: false,
   drivetrain: "",
+  swerveType: "",
+  tread: "",
+  motorBrand: "",
+  robotArchitecture: "",
+  autoDescription: "",
+  autoScore: "",
+  teleopScore: "",
+  cyclesPerShift: "",
+  autoPath: [],
+  bps: "",
   notes: "",
 }
 
@@ -55,6 +80,7 @@ export function PitScoutingRoute() {
   const [pitMap, setPitMap] = useState<{
     eventKey: string
     pits: { teamNumber: number; location: string }[]
+    layout: NexusMap | null
     message?: string
   } | null>(null)
   const [pitMapError, setPitMapError] = useState<string | null>(null)
@@ -99,7 +125,7 @@ export function PitScoutingRoute() {
       </div>
       {selectedTeam === null ? (
         <>
-          <div className="grid gap-3 rounded-xl border bg-card p-4 shadow-sm">
+          <div className="grid min-w-0 gap-3 border-y py-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <MapPinned className="size-5 text-primary" aria-hidden="true" />
@@ -108,8 +134,8 @@ export function PitScoutingRoute() {
                   <p className="text-sm text-muted-foreground">
                     {pitMapLoading
                       ? "Loading from FRC Nexus..."
-                      : pitMap?.pits.length
-                        ? `${pitMap.pits.length} pit locations loaded for ${pitMap.eventKey}.`
+                      : pitMap?.layout
+                        ? eventLabel(activeEvent)
                         : pitMapError ?? pitMap?.message ?? "No pit map loaded yet."}
                   </p>
                 </div>
@@ -124,15 +150,8 @@ export function PitScoutingRoute() {
                 Refresh
               </Button>
             </div>
-            {pitMap?.pits.length ? (
-              <div className="grid max-h-56 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-4">
-                {pitMap.pits.map((pit) => (
-                  <div key={`${pit.teamNumber}-${pit.location}`} className="rounded-lg border bg-background px-3 py-2">
-                    <p className="font-semibold">{pit.teamNumber}</p>
-                    <p className="text-sm text-muted-foreground">{pit.location}</p>
-                  </div>
-                ))}
-              </div>
+            {pitMap?.layout && pitMap.eventKey === activeEvent.eventKey ? (
+              <PitMap layout={pitMap.layout} teams={teams ?? []} onSelect={setSelectedTeam} />
             ) : null}
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -188,6 +207,14 @@ function PitForm({
     const latest = reports?.[0]
     if (latest) {
       setForm({
+        fuelCapacity: latest.fuelCapacity?.toString() ?? "",
+        intakeBps: latest.intakeBps?.toString() ?? "",
+        framePerimeter: latest.framePerimeter?.toString() ?? "",
+        frameLength: latest.frameLength?.toString() ?? "",
+        frameWidth: latest.frameWidth?.toString() ?? "",
+        weight: latest.weight?.toString() ?? "",
+        overallLength: latest.overallLength?.toString() ?? "",
+        overallWidth: latest.overallWidth?.toString() ?? "",
         canScoreFuelHub: latest.canScoreFuelHub,
         canIntakeDepot: latest.canIntakeDepot,
         canIntakeFloor: latest.canIntakeFloor,
@@ -200,6 +227,16 @@ function PitForm({
         canCrossBump: latest.canCrossBump,
         canCrossTrench: latest.canCrossTrench,
         drivetrain: latest.drivetrain,
+        swerveType: latest.swerveType ?? "",
+        tread: latest.tread ?? "",
+        motorBrand: latest.motorBrand ?? "",
+        robotArchitecture: latest.robotArchitecture ?? "",
+        autoDescription: latest.autoDescription ?? "",
+        autoScore: latest.autoScore === undefined ? "" : String(latest.autoScore),
+        teleopScore: latest.teleopScore === undefined ? "" : String(latest.teleopScore),
+        cyclesPerShift: latest.cyclesPerShift === undefined ? "" : String(latest.cyclesPerShift),
+        autoPath: latest.autoPath ?? [],
+        bps: latest.bps === undefined ? "" : String(latest.bps),
         notes: latest.notes,
       })
     } else {
@@ -212,7 +249,30 @@ function PitForm({
 
   async function onSubmit() {
     try {
-      await save({ eventId, teamNumber, ...form })
+      const bps = form.bps.trim() === "" ? undefined : Number(form.bps)
+      if (bps !== undefined && (!Number.isFinite(bps) || bps < 0)) {
+        toast.error("BPS must be a non-negative number")
+        return
+      }
+      const scoring = {
+        autoScore: form.autoScore.trim() ? Number(form.autoScore) : undefined,
+        teleopScore: form.teleopScore.trim() ? Number(form.teleopScore) : undefined,
+        cyclesPerShift: form.cyclesPerShift.trim() ? Number(form.cyclesPerShift) : undefined,
+      }
+      if (Object.values(scoring).some((value) => value !== undefined && (!Number.isFinite(value) || value < 0))) {
+        toast.error("Scoring and cycle counts must be non-negative numbers")
+        return
+      }
+      const measurements = Object.fromEntries(pitMeasurements.map(([key]) => [key, form[key].trim() ? Number(form[key]) : undefined])) as Record<MeasurementKey, number | undefined>
+      if (Object.values(measurements).some((value) => value !== undefined && (!Number.isFinite(value) || value < 0))) {
+        toast.error("Robot measurements must be non-negative numbers")
+        return
+      }
+      if (measurements.fuelCapacity !== undefined && !Number.isInteger(measurements.fuelCapacity)) {
+        toast.error("Fuel capacity must be a whole number")
+        return
+      }
+      await save({ eventId, teamNumber, ...form, ...scoring, ...measurements, bps })
       toast.success(`Saved pit report for ${teamNumber}`)
       onBack()
     } catch (error) {
@@ -254,17 +314,75 @@ function PitForm({
         <CheckRow label="Crosses Bump" checked={form.canCrossBump} onChange={(value) => setBool("canCrossBump", value)} />
         <CheckRow label="Crosses Trench" checked={form.canCrossTrench} onChange={(value) => setBool("canCrossTrench", value)} />
       </FormSection>
-      <FormSection title="Notes">
+      <FormSection title="Robot configuration">
         <div className="grid gap-2">
           <Label htmlFor="drivetrain">Drivetrain</Label>
-          <Input
+          <select
             id="drivetrain"
+            className="h-9 w-full rounded-md border bg-background px-3 text-sm"
             value={form.drivetrain}
             onChange={(event) =>
               setForm((current) => ({ ...current, drivetrain: event.target.value }))
             }
-            placeholder="swerve, tank, etc."
-          />
+          >
+            <option value="">Select drivetrain</option>
+            {["Swerve", "Tank", "West Coast", "Mecanum", "H-drive", "Other"].map((value) => <option key={value} value={value}>{value}</option>)}
+            {form.drivetrain && !["Swerve", "Tank", "West Coast", "Mecanum", "H-drive", "Other"].includes(form.drivetrain) && <option value={form.drivetrain}>{form.drivetrain}</option>}
+          </select>
+        </div>
+        {form.drivetrain.toLowerCase().includes("swerve") && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="swerveType">Swerve type / modules</Label>
+              <Input id="swerveType" value={form.swerveType} onChange={(event) => setForm((current) => ({ ...current, swerveType: event.target.value }))} placeholder="SDS MK4i, REV MAXSwerve, custom..." />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="tread">Swerve wheel tread</Label>
+              <Input id="tread" value={form.tread} onChange={(event) => setForm((current) => ({ ...current, tread: event.target.value }))} placeholder="Brand, material, compound" />
+            </div>
+          </div>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <Label htmlFor="motorBrand">Motor brand / models</Label>
+            <Input id="motorBrand" value={form.motorBrand} onChange={(event) => setForm((current) => ({ ...current, motorBrand: event.target.value }))} placeholder="Drive, steering, shooter motors" />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="robotArchitecture">Robot architecture type</Label>
+            <Input id="robotArchitecture" value={form.robotArchitecture} onChange={(event) => setForm((current) => ({ ...current, robotArchitecture: event.target.value }))} placeholder="Dumper, turret, fixed shooter..." />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="bps">BPS (balls per second)</Label>
+            <Input id="bps" type="number" min="0" step="0.1" inputMode="decimal" value={form.bps} onChange={(event) => setForm((current) => ({ ...current, bps: event.target.value }))} />
+          </div>
+        </div>
+      </FormSection>
+      <FormSection title="Capacity and dimensions">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {pitMeasurements.map(([key, label, step]) => <div key={key} className="grid gap-2">
+            <Label htmlFor={key}>{label}</Label>
+            <Input id={key} type="number" min="0" step={step} inputMode={key === "fuelCapacity" ? "numeric" : "decimal"} value={form[key]} onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))} />
+          </div>)}
+        </div>
+      </FormSection>
+      <FormSection title="Notes">
+        <div className="grid gap-3 sm:grid-cols-3">
+          {([
+            ["autoScore", "Auto scoring (fuel)"],
+            ["teleopScore", "Teleop scoring (fuel)"],
+            ["cyclesPerShift", "Cycles per shift"],
+          ] as const).map(([key, label]) => <div key={key} className="grid gap-2">
+            <Label htmlFor={key}>{label}</Label>
+            <Input id={key} type="number" min="0" step="any" inputMode="decimal" value={form[key]} onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))} />
+          </div>)}
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="autoDescription">Describe their auto</Label>
+          <Textarea id="autoDescription" value={form.autoDescription} onChange={(event) => setForm((current) => ({ ...current, autoDescription: event.target.value }))} placeholder="Starting positions, paths, fuel scored, intake, climb, and consistency..." rows={3} />
+        </div>
+        <div className="grid min-w-0 gap-2">
+          <h3 className="text-sm font-medium">Auto path</h3>
+          <AutoPath value={form.autoPath} onChange={(autoPath) => setForm((current) => ({ ...current, autoPath }))} />
         </div>
         <div className="grid gap-2">
           <Label htmlFor="pitNotes">Robot notes</Label>

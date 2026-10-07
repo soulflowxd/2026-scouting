@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { internal } from "./_generated/api"
 import { action, env, internalQuery } from "./_generated/server"
+import { normalizeNexusMap, type NexusMap } from "./lib/nexusMap"
 
 type EventInfo = {
   eventKey: string
@@ -23,7 +24,7 @@ export const eventInfo = internalQuery({
 
 export const fetchPitMap = action({
   args: { eventId: v.id("events") },
-  handler: async (ctx, args): Promise<{ eventKey: string; pits: PitMapEntry[]; message?: string }> => {
+  handler: async (ctx, args): Promise<{ eventKey: string; pits: PitMapEntry[]; layout: NexusMap | null; message?: string }> => {
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) {
       throw new Error("Sign in to load Nexus pit map")
@@ -51,16 +52,27 @@ export const fetchPitMap = action({
     if (!response.ok) {
       const message = extractMessage(payload) ?? text.trim() ?? `Nexus returned ${response.status}`
       if (response.status === 404) {
-        return { eventKey: event.eventKey, pits: [], message }
+        return { eventKey: event.eventKey, pits: [], layout: null, message }
       }
       throw new Error(message)
     }
 
     const pits = normalizePits(payload)
+    const mapResponse = await fetch(
+      `https://frc.nexus/api/v1/event/${encodeURIComponent(event.eventKey)}/map`,
+      { headers: { "Nexus-Api-Key": apiKey } },
+    )
+    if (!mapResponse.ok && mapResponse.status !== 404) {
+      throw new Error(`Nexus map request failed (${mapResponse.status})`)
+    }
+    const layout = mapResponse.ok
+      ? normalizeNexusMap(await mapResponse.json())
+      : null
     return {
       eventKey: event.eventKey,
       pits,
-      message: pits.length > 0 ? undefined : "Nexus returned no pit map entries.",
+      layout,
+      message: layout ? undefined : "Nexus has not published a floor plan for this event.",
     }
   },
 })

@@ -12,18 +12,24 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { AutoPath } from "@/components/auto-path"
+import { pitMeasurements } from "@/lib/pit-measurements"
 import { Separator } from "@/components/ui/separator"
 import { eventLabel, useActiveEvent } from "@/lib/active-event"
 import { climbLabels, tierLabels } from "@/lib/labels"
 
-type TeamSort = "teamNumber" | "epa" | "averageRp"
+type TeamSort = "teamNumber" | "epa" | "averageRp" | "xp"
 type SortDirection = "asc" | "desc"
+type XpScope = "season" | "all"
 
 export function TeamsRoute() {
   const { activeEvent } = useActiveEvent()
+  const [xpScope, setXpScope] = useState<XpScope>(() =>
+    localStorage.getItem("match13-xp-scope") === "all" ? "all" : "season",
+  )
   const teams = useQuery(
     api.teams.list,
-    activeEvent ? { eventId: activeEvent._id } : "skip",
+    activeEvent ? { eventId: activeEvent._id, xpScope } : "skip",
   )
   const [search, setSearch] = useState("")
   const [selectedTeam, setSelectedTeam] = useState<number | null>(null)
@@ -66,6 +72,29 @@ export function TeamsRoute() {
             className="pl-9"
           />
         </label>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium">xP scope</span>
+        <div role="group" aria-label="xP scope" className="inline-flex gap-1">
+          {([
+            { value: "season", label: "In season" },
+            { value: "all", label: "Including offseason" },
+          ] as const).map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              aria-pressed={xpScope === option.value}
+              variant={xpScope === option.value ? "default" : "outline"}
+              onClick={() => {
+                setXpScope(option.value)
+                localStorage.setItem("match13-xp-scope", option.value)
+              }}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-medium">Sort</span>
@@ -119,6 +148,7 @@ export function TeamsRoute() {
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <Metric label="EPA" value={fmt(team.epa)} />
+              <Metric label="xP" value={fmt(team.xp)} />
               <Metric label="Avg RP" value={fmt(team.averageRp)} />
               <Metric label="Pit" value={team.pitScouted ? "Scouted" : "Not scouted"} />
               <Metric label="Reports" value={String(team.matchReportCount)} />
@@ -130,6 +160,7 @@ export function TeamsRoute() {
       </div>
       <TeamDetailDialog
         eventId={activeEvent._id}
+        xpScope={xpScope}
         teamNumber={selectedTeam}
         onOpenChange={(open) => {
           if (!open) setSelectedTeam(null)
@@ -141,16 +172,18 @@ export function TeamsRoute() {
 
 function TeamDetailDialog({
   eventId,
+  xpScope,
   teamNumber,
   onOpenChange,
 }: {
   eventId: Id<"events">
+  xpScope: XpScope
   teamNumber: number | null
   onOpenChange: (open: boolean) => void
 }) {
   const detail = useQuery(
     api.teams.detail,
-    teamNumber === null ? "skip" : { eventId, teamNumber },
+    teamNumber === null ? "skip" : { eventId, teamNumber, xpScope },
   )
 
   return (
@@ -192,6 +225,14 @@ function TeamDetailDialog({
                 <Metric label="DPR" value={fmt(detail.stats?.dpr)} />
                 <Metric label="CCWM" value={fmt(detail.stats?.ccwm)} />
                 <Metric label="EPA" value={fmt(detail.stats?.epa)} />
+                <Metric label="xP" value={fmt(detail.stats?.xp)} />
+                <Metric label="Match13 EPA" value={fmt(detail.stats?.match13Epa)} />
+                <Metric label="Auto xP" value={fmt(detail.stats?.autoXp)} />
+                <Metric label="Teleop xP" value={fmt(detail.stats?.teleopXp)} />
+                <Metric label="Endgame xP" value={fmt(detail.stats?.endgameXp)} />
+                <Metric label="RP1 probability" value={percent(detail.stats?.predictedRp1)} />
+                <Metric label="RP2 probability" value={percent(detail.stats?.predictedRp2)} />
+                <Metric label="RP3 probability" value={percent(detail.stats?.predictedRp3)} />
                 <Metric label="Record" value={`${detail.stats?.wins ?? 0}-${detail.stats?.losses ?? 0}-${detail.stats?.ties ?? 0}`} />
                 <Metric label="Avg RP" value={fmt(detail.stats?.averageRp)} />
                 <Metric label="Auto EPA" value={fmt(detail.stats?.autoEpa)} />
@@ -215,6 +256,18 @@ function TeamDetailDialog({
                       {report.canClimbLevel3 ? "Y" : "N"}
                     </p>
                     <p className="text-muted-foreground">{report.notes || "No notes"}</p>
+                    {report.drivetrain && <p>Drivetrain: {report.drivetrain}</p>}
+                    {report.drivetrain.toLowerCase().includes("swerve") && report.swerveType && <p>Swerve: {report.swerveType}</p>}
+                    {report.drivetrain.toLowerCase().includes("swerve") && report.tread && <p>Tread: {report.tread}</p>}
+                    {report.motorBrand && <p>Motors: {report.motorBrand}</p>}
+                    {report.robotArchitecture && <p>Architecture: {report.robotArchitecture}</p>}
+                    {report.autoDescription && <p className="whitespace-pre-wrap break-words">Auto: {report.autoDescription}</p>}
+                    {report.autoScore !== undefined && <p>Auto scoring (fuel): {report.autoScore}</p>}
+                    {report.teleopScore !== undefined && <p>Teleop scoring (fuel): {report.teleopScore}</p>}
+                    {report.cyclesPerShift !== undefined && <p>Cycles per shift: {report.cyclesPerShift}</p>}
+                    {!!report.autoPath?.length && <AutoPath value={report.autoPath} readOnly />}
+                    {report.bps !== undefined && <p>BPS: {report.bps}</p>}
+                    {pitMeasurements.map(([key, label]) => report[key] !== undefined ? <p key={key}>{label}: {report[key]}</p> : null)}
                   </div>
                 ))
               ) : (
@@ -248,6 +301,7 @@ function TeamDetailDialog({
 const teamSortOptions: { label: string; value: TeamSort }[] = [
   { label: "Team #", value: "teamNumber" },
   { label: "EPA", value: "epa" },
+  { label: "xP", value: "xp" },
   { label: "RP", value: "averageRp" },
 ]
 
@@ -257,8 +311,8 @@ const sortDirectionOptions: { label: string; value: SortDirection }[] = [
 ]
 
 function sortTeams(
-  a: { teamNumber: number; epa?: number; averageRp?: number },
-  b: { teamNumber: number; epa?: number; averageRp?: number },
+  a: { teamNumber: number; epa?: number; averageRp?: number; xp?: number },
+  b: { teamNumber: number; epa?: number; averageRp?: number; xp?: number },
   sortBy: TeamSort,
   direction: SortDirection,
 ) {
@@ -285,6 +339,10 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function fmt(value: number | undefined) {
   return typeof value === "number" ? value.toFixed(1) : "n/a"
+}
+
+function percent(value: number | undefined) {
+  return typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "n/a"
 }
 
 function EmptyEvent() {

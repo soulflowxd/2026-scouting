@@ -1,4 +1,6 @@
 import { useMutation, useQuery } from "convex/react"
+import { ConvexError } from "convex/values"
+import { Check, Clock3, ListFilter } from "lucide-react"
 import { useMemo, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
@@ -8,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { eventLabel, useActiveEvent } from "@/lib/active-event"
 import { climbLabels, matchTags } from "@/lib/labels"
+import { cn } from "@/lib/utils"
 
 type AutoClimb = "none" | "level1"
 type EndgameClimb = "none" | "level1" | "level2" | "level3"
@@ -65,73 +68,107 @@ export function MatchScoutingRoute() {
     () => matches?.find((match) => match.matchNumber === matchNumber) ?? null,
     [matchNumber, matches],
   )
-  const matchTeams = selectedMatch
-    ? sortTeamNumbers(
-        [...selectedMatch.redTeams, ...selectedMatch.blueTeams],
-        selectedMatch.teamStats,
-        teamSort,
-        sortDirection,
-      )
-    : []
+  const orderedMatches = useMemo(
+    () => [...(matches ?? [])].sort((a, b) => a.matchNumber - b.matchNumber),
+    [matches],
+  )
 
   if (!activeEvent) return <EmptyEvent />
 
   return (
-    <section className="grid gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold">Match Scouting</h1>
-        <p className="text-sm text-muted-foreground">
-          {eventLabel(activeEvent)}. Claim one robot, then submit one match report.
-        </p>
-      </div>
-      <div className="grid gap-3 rounded-xl border bg-card p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium">Sort teams</span>
-          {teamSortOptions.map((option) => (
-            <Button
-              key={option.value}
-              type="button"
-              size="sm"
-              variant={teamSort === option.value ? "default" : "outline"}
-              onClick={() => setTeamSort(option.value)}
-            >
-              {option.label}
-            </Button>
-          ))}
-          <span className="ml-2 text-sm font-medium">Order</span>
-          {sortDirectionOptions.map((option) => (
-            <Button
-              key={option.value}
-              type="button"
-              size="sm"
-              variant={sortDirection === option.value ? "default" : "outline"}
-              onClick={() => setSortDirection(option.value)}
-            >
-              {option.label}
-            </Button>
-          ))}
+    <section className="grid gap-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="grid gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Match Scouting</h1>
+          <p className="text-sm text-muted-foreground">
+            {eventLabel(activeEvent)} · Select a team to claim its robot and start scouting.
+          </p>
         </div>
-        <div className="grid max-h-72 gap-2 overflow-y-auto pr-1">
-          {(matches ?? [])
-            .sort((a, b) => a.matchNumber - b.matchNumber)
-            .map((match) => (
-              <button
-                key={match._id}
+        <div className="rounded-md border bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+          {orderedMatches.length} matches
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-xl border bg-card">
+        <div className="flex flex-wrap items-center gap-3 border-b bg-muted/25 px-3 py-3 sm:px-4">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <ListFilter className="size-4 text-muted-foreground" aria-hidden="true" />
+            Team order
+          </div>
+          <div className="flex rounded-lg bg-muted p-0.5" role="group" aria-label="Sort teams by">
+            {teamSortOptions.map((option) => (
+              <Button
+                key={option.value}
                 type="button"
-                onClick={() => {
-                  setMatchNumber(match.matchNumber)
-                  setTeamNumber(null)
-                }}
-                className={`grid gap-3 rounded-lg border bg-background p-3 text-left shadow-sm transition-colors hover:bg-muted/60 ${
-                  matchNumber === match.matchNumber
-                    ? "border-primary ring-2 ring-primary/30"
-                    : ""
-                }`}
+                size="sm"
+                variant="ghost"
+                className={cn(
+                  "h-7 rounded-md px-3",
+                  teamSort === option.value && "bg-background shadow-sm hover:bg-background",
+                )}
+                onClick={() => setTeamSort(option.value)}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="font-semibold">QM{match.matchNumber}</span>
+                {option.label}
+              </Button>
+            ))}
+          </div>
+          <div className="flex rounded-lg bg-muted p-0.5" role="group" aria-label="Sort direction">
+            {sortDirectionOptions.map((option) => (
+              <Button
+                key={option.value}
+                type="button"
+                size="sm"
+                variant="ghost"
+                className={cn(
+                  "h-7 rounded-md px-3",
+                  sortDirection === option.value &&
+                    "bg-background shadow-sm hover:bg-background",
+                )}
+                onClick={() => setSortDirection(option.value)}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </div>
+          <p className="basis-full text-xs text-muted-foreground sm:ml-auto sm:basis-auto">
+            Select a team card to begin
+          </p>
+        </div>
+        <div className="max-h-[34rem] overflow-y-auto">
+          {matches === undefined && (
+            <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+              Loading match schedule…
+            </p>
+          )}
+          {matches !== undefined && orderedMatches.length === 0 && (
+            <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+              No qualification matches are available yet.
+            </p>
+          )}
+          {orderedMatches.map((match) => {
+            const isSelected = matchNumber === match.matchNumber
+            return (
+              <article
+                key={match._id}
+                className={cn(
+                  "grid gap-3 border-b px-3 py-3 last:border-b-0 sm:px-4 lg:grid-cols-[7.5rem_minmax(0,1fr)_minmax(0,1fr)] lg:items-center",
+                  isSelected && "bg-primary/[0.045]",
+                )}
+              >
+                <div className="flex items-center justify-between gap-3 lg:block">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-semibold tracking-tight">
+                      QM{match.matchNumber}
+                    </span>
+                    {isSelected && (
+                      <span className="grid size-5 place-items-center rounded-full bg-primary text-primary-foreground">
+                        <Check className="size-3" aria-hidden="true" />
+                        <span className="sr-only">Selected match</span>
+                      </span>
+                    )}
+                  </div>
                   {match.scheduledTime && (
-                    <span className="text-xs text-muted-foreground">
+                    <span className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                      <Clock3 className="size-3" aria-hidden="true" />
                       {new Date(match.scheduledTime * 1000).toLocaleTimeString([], {
                         hour: "numeric",
                         minute: "2-digit",
@@ -140,45 +177,35 @@ export function MatchScoutingRoute() {
                   )}
                 </div>
                 <AllianceRow
-                  label="Red"
+                  label="Red alliance"
                   teams={match.redTeams}
                   teamStats={match.teamStats}
                   teamSort={teamSort}
                   sortDirection={sortDirection}
                   tone="red"
+                  selectedTeam={isSelected ? teamNumber : null}
+                  onSelect={(team) => {
+                    setMatchNumber(match.matchNumber)
+                    setTeamNumber(team)
+                  }}
                 />
                 <AllianceRow
-                  label="Blue"
+                  label="Blue alliance"
                   teams={match.blueTeams}
                   teamStats={match.teamStats}
                   teamSort={teamSort}
                   sortDirection={sortDirection}
                   tone="blue"
+                  selectedTeam={isSelected ? teamNumber : null}
+                  onSelect={(team) => {
+                    setMatchNumber(match.matchNumber)
+                    setTeamNumber(team)
+                  }}
                 />
-              </button>
-            ))}
+              </article>
+            )
+          })}
         </div>
-        {selectedMatch && (
-          <div className="grid gap-2 border-t pt-3">
-            <p className="text-sm font-medium">Choose robot to scout</p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-6">
-            {matchTeams.map((team) => (
-              <Button
-                key={team}
-                type="button"
-                variant={teamNumber === team ? "default" : "outline"}
-                className="h-auto min-h-14 flex-col gap-0.5 py-2"
-                onClick={() => setTeamNumber(team)}
-              >
-                <span>{team}</span>
-                <span className="text-[11px] opacity-80">
-                  {teamMetricLabel(selectedMatch.teamStats, team)}
-                </span>
-              </Button>
-            ))}
-            </div>
-          </div>
-        )}
       </div>
       {selectedMatch && teamNumber !== null && (
         <MatchForm
@@ -198,6 +225,8 @@ function AllianceRow({
   teamSort,
   sortDirection,
   tone,
+  selectedTeam,
+  onSelect,
 }: {
   label: string
   teams: number[]
@@ -205,32 +234,43 @@ function AllianceRow({
   teamSort: TeamSort
   sortDirection: SortDirection
   tone: "red" | "blue"
+  selectedTeam: number | null
+  onSelect: (teamNumber: number) => void
 }) {
   const sortedTeams = sortTeamNumbers(teams, teamStats, teamSort, sortDirection)
   return (
-    <div className="grid gap-1">
+    <div className="grid gap-1.5">
       <span
-        className={`text-xs font-medium ${
-          tone === "red" ? "text-red-700" : "text-blue-700"
-        }`}
+        className={cn(
+          "text-[11px] font-semibold uppercase tracking-wide",
+          tone === "red" ? "text-red-700 dark:text-red-300" : "text-blue-700 dark:text-blue-300",
+        )}
       >
         {label}
       </span>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="grid grid-cols-3 gap-1.5">
         {sortedTeams.map((team) => (
-          <span
+          <button
             key={team}
-            className={`grid min-w-20 gap-0.5 rounded-md border px-2 py-1 text-xs font-semibold ${
+            type="button"
+            onClick={() => onSelect(team)}
+            aria-pressed={selectedTeam === team}
+            className={cn(
+              "grid min-w-0 gap-0.5 rounded-lg border px-2 py-2 text-left transition-[background-color,border-color,box-shadow,transform] hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               tone === "red"
-                ? "border-red-200 bg-red-50 text-red-800"
-                : "border-blue-200 bg-blue-50 text-blue-800"
-            }`}
+                ? "border-red-500/25 bg-red-500/8 text-red-800 hover:bg-red-500/15 dark:text-red-200"
+                : "border-blue-500/25 bg-blue-500/8 text-blue-800 hover:bg-blue-500/15 dark:text-blue-200",
+              selectedTeam === team &&
+                (tone === "red"
+                  ? "border-red-500 bg-red-500/20 ring-2 ring-red-500/25"
+                  : "border-blue-500 bg-blue-500/20 ring-2 ring-blue-500/25"),
+            )}
           >
-            <span>{team}</span>
-            <span className="font-medium opacity-80">
+            <span className="truncate text-sm font-semibold">{team}</span>
+            <span className="truncate text-[10px] font-medium opacity-75">
               {teamMetricLabel(teamStats, team)}
             </span>
-          </span>
+          </button>
         ))}
       </div>
     </div>
@@ -283,27 +323,56 @@ function MatchForm({
   teamNumber: number
 }) {
   const claims = useQuery(api.matchScouting.claimsForMatch, { eventId, matchNumber })
+  const me = useQuery(api.members.me)
+  const releaseClaim = useMutation(api.matchScouting.releaseClaim)
   const claimRobot = useMutation(api.matchScouting.claimRobot)
   const saveReport = useMutation(api.matchScouting.saveReport)
   const [form, setForm] = useState<MatchFormState>(emptyMatchForm)
   const claim = claims?.find((item) => item.teamNumber === teamNumber && item.status === "active")
+  const myClaim = claims?.find((item) => item.scoutToken === me?.tokenIdentifier && item.status === "active")
+  const claimedByOther = !!claim && claim.scoutToken !== me?.tokenIdentifier
+  const [claimPending, setClaimPending] = useState(false)
+
+  async function onRelease() {
+    if (!myClaim) return
+    setClaimPending(true)
+    try {
+      await releaseClaim({ claimId: myClaim._id })
+      toast.success(`Released team ${myClaim.teamNumber}`)
+    } catch (error) {
+      toast.error(error instanceof ConvexError ? String(error.data) : "Could not release claim. Please try again.")
+    } finally { setClaimPending(false) }
+  }
 
   async function onClaim() {
+    setClaimPending(true)
     try {
       await claimRobot({ eventId, matchNumber, teamNumber })
       toast.success(`Claimed ${teamNumber} in QM${matchNumber}`)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Claim failed")
+      toast.error(error instanceof ConvexError ? String(error.data) : "Could not claim robot. Please try again.")
+    } finally {
+      setClaimPending(false)
     }
   }
 
   async function onSubmit() {
+    const reportedBreakdown = form.tags.includes("Broke down")
+    const breakdownMessage = `Team ${teamNumber} broke down in QM${matchNumber}. Ask the team what failed on the robot.`
+    const breakdownToastId = `breakdown-${eventId}-${matchNumber}-${teamNumber}`
     try {
       await saveReport({ eventId, matchNumber, teamNumber, ...form })
-      toast.success(`Saved QM${matchNumber} report for ${teamNumber}`)
+      if (reportedBreakdown) {
+        toast.warning(breakdownMessage, {
+          id: breakdownToastId,
+          duration: 10_000,
+        })
+      } else {
+        toast.success(`Saved QM${matchNumber} report for ${teamNumber}`)
+      }
       setForm(emptyMatchForm)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Save failed")
+      toast.error(error instanceof ConvexError ? String(error.data) : error instanceof Error ? error.message : "Save failed")
     }
   }
 
@@ -324,12 +393,15 @@ function MatchForm({
               QM{matchNumber} · Team {teamNumber}
             </h2>
             <p className="text-sm text-muted-foreground">
-              {claim ? "Robot claimed" : "Claim required before submit"}
+              {claimedByOther ? `Claimed by ${claim?.scoutName ?? "another scout"}` : claim ? "Claimed by you" : myClaim ? `You have team ${myClaim.teamNumber} claimed in this match` : "Claim required before submit"}
             </p>
           </div>
-          <Button type="button" onClick={() => void onClaim()} disabled={Boolean(claim)}>
+          <div className="flex flex-wrap gap-2">
+          {myClaim && <Button type="button" variant="outline" disabled={claimPending} onClick={() => void onRelease()}>Release team {myClaim.teamNumber}</Button>}
+          <Button type="button" onClick={() => void onClaim()} disabled={claims === undefined || me === undefined || Boolean(claim) || Boolean(myClaim) || claimPending}>
             Claim
           </Button>
+          </div>
         </div>
       </div>
       <FormSection title="Autonomous">

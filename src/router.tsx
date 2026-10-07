@@ -19,6 +19,12 @@ export const router = createBrowserRouter([
         }),
       },
       {
+        path: "admin",
+        lazy: async () => ({
+          Component: (await import("@/routes/admin")).AdminRoute,
+        }),
+      },
+      {
         path: "teams",
         lazy: async () => ({
           Component: (await import("@/routes/teams")).TeamsRoute,
@@ -41,6 +47,10 @@ export const router = createBrowserRouter([
         lazy: async () => ({
           Component: (await import("@/routes/pick-lists")).PickListsRoute,
         }),
+      },
+      {
+        path: "strategy",
+        lazy: async () => ({ Component: (await import("@/routes/strategy-board")).StrategyBoardRoute }),
       },
     ],
   },

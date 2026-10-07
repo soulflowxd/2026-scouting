@@ -1,6 +1,7 @@
 import { authTables } from "@convex-dev/auth/server"
 import { defineSchema, defineTable } from "convex/server"
 import { v } from "convex/values"
+import { match13RatingValidator } from "./lib/match13"
 
 const pickTier = v.union(
   v.literal("tier1"),
@@ -23,9 +24,25 @@ export default defineSchema({
     tokenIdentifier: v.string(),
     email: v.optional(v.string()),
     name: v.optional(v.string()),
-    role: v.union(v.literal("admin"), v.literal("scout")),
+    role: v.union(
+      v.literal("superAdmin"),
+      v.literal("admin"),
+      v.literal("scout"),
+    ),
+    approvalStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("approved"),
+        v.literal("rejected"),
+      ),
+    ),
+    requestedAt: v.optional(v.number()),
+    approvedAt: v.optional(v.number()),
+    approvedByToken: v.optional(v.string()),
     lastSeenAt: v.number(),
-  }).index("by_tokenIdentifier", ["tokenIdentifier"]),
+  })
+    .index("by_tokenIdentifier", ["tokenIdentifier"])
+    .index("by_role", ["role"]),
   events: defineTable({
     eventKey: v.string(),
     name: v.optional(v.string()),
@@ -74,6 +91,16 @@ export default defineSchema({
     losses: v.optional(v.number()),
     ties: v.optional(v.number()),
     averageRp: v.optional(v.number()),
+    xp: v.optional(v.number()),
+    xpSeason: v.optional(match13RatingValidator),
+    xpAll: v.optional(match13RatingValidator),
+    match13Epa: v.optional(v.number()),
+    autoXp: v.optional(v.number()),
+    teleopXp: v.optional(v.number()),
+    endgameXp: v.optional(v.number()),
+    predictedRp1: v.optional(v.number()),
+    predictedRp2: v.optional(v.number()),
+    predictedRp3: v.optional(v.number()),
     epa: v.optional(v.number()),
     autoEpa: v.optional(v.number()),
     teleopEpa: v.optional(v.number()),
@@ -104,6 +131,24 @@ export default defineSchema({
     canCrossBump: v.boolean(),
     canCrossTrench: v.boolean(),
     drivetrain: v.string(),
+    swerveType: v.optional(v.string()),
+    tread: v.optional(v.string()),
+    motorBrand: v.optional(v.string()),
+    robotArchitecture: v.optional(v.string()),
+    autoDescription: v.optional(v.string()),
+    autoScore: v.optional(v.number()),
+    teleopScore: v.optional(v.number()),
+    cyclesPerShift: v.optional(v.number()),
+    autoPath: v.optional(v.array(v.array(v.object({ x: v.number(), y: v.number() })))),
+    bps: v.optional(v.number()),
+    fuelCapacity: v.optional(v.number()),
+    intakeBps: v.optional(v.number()),
+    framePerimeter: v.optional(v.number()),
+    frameLength: v.optional(v.number()),
+    frameWidth: v.optional(v.number()),
+    weight: v.optional(v.number()),
+    overallLength: v.optional(v.number()),
+    overallWidth: v.optional(v.number()),
     notes: v.string(),
     updatedAt: v.number(),
   })
@@ -158,6 +203,23 @@ export default defineSchema({
       "matchNumber",
       "scoutToken",
       "status",
+    ]),
+  scoutNotifications: defineTable({
+    recipientToken: v.string(),
+    eventId: v.id("events"),
+    kind: v.literal("robotBreakdown"),
+    matchNumber: v.number(),
+    teamNumber: v.number(),
+    message: v.string(),
+    createdAt: v.number(),
+    readAt: v.optional(v.number()),
+  })
+    .index("by_recipientToken_and_createdAt", ["recipientToken", "createdAt"])
+    .index("by_recipientToken_and_eventId_and_matchNumber_and_teamNumber", [
+      "recipientToken",
+      "eventId",
+      "matchNumber",
+      "teamNumber",
     ]),
   pickLists: defineTable({
     eventId: v.id("events"),

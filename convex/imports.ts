@@ -1,8 +1,11 @@
+"use node";
+
 import { v } from "convex/values"
 import { internal } from "./_generated/api"
-import { action, internalAction, internalMutation, internalQuery } from "./_generated/server"
+import { action, internalAction } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
 import { readEnv } from "./lib/env"
+import { match13Stats, scopedMatch13Stats, type Match13Team } from "./lib/match13"
 
 type TbaTeam = {
   key: string
@@ -263,7 +266,7 @@ export const importEvent = action({
     if (!tbaKey) throw new Error("Missing TBA_API_KEY")
 
     const eventId: Id<"events"> = await ctx.runMutation(
-      internal.imports.beginImport,
+      internal.importData.beginImport,
       { eventKey, createdByToken: admin.tokenIdentifier },
     )
 
@@ -297,7 +300,7 @@ export const importEvent = action({
           }),
         )
 
-      await ctx.runMutation(internal.imports.applyEventImport, {
+      await ctx.runMutation(internal.importData.applyEventImport, {
         eventId,
         eventName: event.name,
         teams: teams.map((team) =>
@@ -316,7 +319,7 @@ export const importEvent = action({
       await ctx.runAction(internal.imports.refreshStatsInternal, { eventId })
       return { eventId, teamCount: teams.length, matchCount: qualMatches.length }
     } catch (error) {
-      await ctx.runMutation(internal.imports.markImportError, {
+      await ctx.runMutation(internal.importData.markImportError, {
         eventId,
         message: error instanceof Error ? error.message : "Import failed",
       })
@@ -324,7 +327,6 @@ export const importEvent = action({
     }
   },
 })
-
 export const refreshStats = action({
   args: { eventId: v.id("events") },
   handler: async (
@@ -347,7 +349,7 @@ export const refreshStatsInternal = internalAction({
     const eventData: {
       eventKey: string
       teams: { teamNumber: number; tbaTeamKey: string }[]
-    } | null = await ctx.runQuery(internal.imports.getEventForRefresh, args)
+    } | null = await ctx.runQuery(internal.importData.getEventForRefresh, args)
     if (!eventData) throw new Error("Event not found")
 
     const tbaKey = readEnv("TBA_API_KEY")
@@ -489,8 +491,71 @@ export const refreshStatsInternal = internalAction({
       // Statbotics predictions are optional; TBA import remains useful without them.
     }
 
+    const match13Key = readEnv("MATCH13_API_KEY").trim()
+    let match13Teams: Match13Team[] = []
+    const scopedTeams: Record<"season" | "all", Map<number, Match13Team>> = {
+      season: new Map(),
+      all: new Map(),
+    }
+    if (match13Key) {
+      const response = await fetch(
+        `https://actions.match13.com/v1/events/${encodeURIComponent(eventKey)}/teams`,
+        {
+          headers: { Authorization: `Bearer ${match13Key}` },
+          signal: AbortSignal.timeout(30000),
+        },
+      )
+      if (response.ok) {
+        const data = await response.json() as {
+          eventKey: string
+          year: number
+          teams: Match13Team[]
+        }
+        if (data.eventKey !== eventKey || data.year !== statboticsYear) {
+          throw new Error("Match13 returned data for a different event or year")
+        }
+        match13Teams = data.teams
+      } else if (response.status !== 404) {
+        throw new Error(`Match13 stats request failed (${response.status})`)
+      }
+      if (statboticsYear) {
+        for (const scope of ["season", "all"] as const) {
+          let page: number | null = 1
+          let pagesRead = 0
+          while (page !== null && pagesRead < 20) {
+            const data: {
+              year: number
+              nextPage: number | null
+              teams: (Match13Team & { year: number })[]
+            } = await fetchJson<{
+              year: number
+              nextPage: number | null
+              teams: (Match13Team & { year: number })[]
+            }>(
+              `https://actions.match13.com/v1/years/${statboticsYear}/teams?scope=${scope}&page=${page}&limit=1000`,
+              { Authorization: `Bearer ${match13Key}` },
+            )
+            if (data.year !== statboticsYear) {
+              throw new Error("Match13 returned ratings for a different year")
+            }
+            for (const row of data.teams) {
+              if (row.year === statboticsYear && teamNumbers.has(row.teamNumber)) {
+                scopedTeams[scope].set(row.teamNumber, row)
+              }
+            }
+            pagesRead += 1
+            if (scopedTeams[scope].size === teamNumbers.size) break
+            page = data.nextPage
+          }
+          if (page !== null && pagesRead === 20) {
+            throw new Error("Match13 season pagination exceeded its safety limit")
+          }
+        }
+      }
+    }
+
     const refreshedAt = Date.now()
-    await ctx.runMutation(internal.imports.applyStatsRefresh, {
+    await ctx.runMutation(internal.importData.applyStatsRefresh, {
       eventId: args.eventId,
       refreshedAt,
       stats: eventData.teams.map((team) => {
@@ -507,6 +572,9 @@ export const refreshStatsInternal = internalAction({
         const teamKey = team.tbaTeamKey
         return omitUndefined({
           teamNumber: team.teamNumber,
+          ...match13Stats(match13Teams.find((row) => row.teamNumber === team.teamNumber)),
+          xpSeason: match13Key ? omitUndefined(scopedMatch13Stats(scopedTeams.season.get(team.teamNumber))) : undefined,
+          xpAll: match13Key ? omitUndefined(scopedMatch13Stats(scopedTeams.all.get(team.teamNumber))) : undefined,
           opr: oprs.oprs?.[teamKey],
           dpr: oprs.dprs?.[teamKey],
           ccwm: oprs.ccwms?.[teamKey],
@@ -599,182 +667,3 @@ export const refreshStatsInternal = internalAction({
   },
 })
 
-export const getEventForRefresh = internalQuery({
-  args: { eventId: v.id("events") },
-  handler: async (ctx, args) => {
-    const event = await ctx.db.get(args.eventId)
-    if (!event) return null
-    const teams = await ctx.db
-      .query("teams")
-      .withIndex("by_eventId", (q) => q.eq("eventId", args.eventId))
-      .take(500)
-    return {
-      eventKey: event.eventKey,
-      teams: teams.map((team) => ({
-        teamNumber: team.teamNumber,
-        tbaTeamKey: team.tbaTeamKey,
-      })),
-    }
-  },
-})
-
-export const beginImport = internalMutation({
-  args: { eventKey: v.string(), createdByToken: v.string() },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("events")
-      .withIndex("by_eventKey", (q) => q.eq("eventKey", args.eventKey))
-      .unique()
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        importStatus: "importing",
-        importMessage: "Importing event data",
-        activeAt: Date.now(),
-      })
-      return existing._id
-    }
-    return await ctx.db.insert("events", {
-      eventKey: args.eventKey,
-      importStatus: "importing",
-      importMessage: "Importing event data",
-      activeAt: Date.now(),
-      createdByToken: args.createdByToken,
-    })
-  },
-})
-
-export const markImportError = internalMutation({
-  args: { eventId: v.id("events"), message: v.string() },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.eventId, {
-      importStatus: "error",
-      importMessage: args.message.slice(0, 500),
-    })
-  },
-})
-
-export const applyEventImport = internalMutation({
-  args: {
-    eventId: v.id("events"),
-    eventName: v.optional(v.string()),
-    teams: v.array(
-      v.object({
-        tbaTeamKey: v.string(),
-        teamNumber: v.number(),
-        nickname: v.string(),
-        city: v.optional(v.string()),
-        stateProv: v.optional(v.string()),
-        country: v.optional(v.string()),
-      }),
-    ),
-    matches: v.array(
-      v.object({
-        tbaMatchKey: v.string(),
-        matchNumber: v.number(),
-        redTeams: v.array(v.number()),
-        blueTeams: v.array(v.number()),
-        scheduledTime: v.optional(v.number()),
-      }),
-    ),
-  },
-  handler: async (ctx, args) => {
-    for (const team of args.teams) {
-      const existing = await ctx.db
-        .query("teams")
-        .withIndex("by_eventId_and_teamNumber", (q) =>
-          q.eq("eventId", args.eventId).eq("teamNumber", team.teamNumber),
-        )
-        .unique()
-      const doc = { eventId: args.eventId, ...team }
-      if (existing) {
-        await ctx.db.patch(existing._id, doc)
-      } else {
-        await ctx.db.insert("teams", doc)
-      }
-    }
-
-    for (const match of args.matches) {
-      const existing = await ctx.db
-        .query("matches")
-        .withIndex("by_eventId_and_matchNumber", (q) =>
-          q.eq("eventId", args.eventId).eq("matchNumber", match.matchNumber),
-        )
-        .unique()
-      const doc = { eventId: args.eventId, ...match }
-      if (existing) {
-        await ctx.db.patch(existing._id, doc)
-      } else {
-        await ctx.db.insert("matches", doc)
-      }
-    }
-
-    await ctx.db.patch(args.eventId, omitUndefined({
-      name: args.eventName,
-      importStatus: "ready",
-      importMessage: `Imported ${args.teams.length} teams and ${args.matches.length} qualification matches`,
-      importedAt: Date.now(),
-    }))
-  },
-})
-
-export const applyStatsRefresh = internalMutation({
-  args: {
-    eventId: v.id("events"),
-    refreshedAt: v.number(),
-    stats: v.array(
-      v.object({
-        teamNumber: v.number(),
-        opr: v.optional(v.number()),
-        dpr: v.optional(v.number()),
-        ccwm: v.optional(v.number()),
-        wins: v.optional(v.number()),
-        losses: v.optional(v.number()),
-        ties: v.optional(v.number()),
-        averageRp: v.optional(v.number()),
-        epa: v.optional(v.number()),
-        autoEpa: v.optional(v.number()),
-        teleopEpa: v.optional(v.number()),
-        endgameEpa: v.optional(v.number()),
-      }),
-    ),
-    predictions: v.array(
-      v.object({
-        matchNumber: v.number(),
-        redWinProb: v.optional(v.number()),
-        blueWinProb: v.optional(v.number()),
-      }),
-    ),
-  },
-  handler: async (ctx, args) => {
-    for (const stat of args.stats) {
-      const existing = await ctx.db
-        .query("externalStats")
-        .withIndex("by_eventId_and_teamNumber", (q) =>
-          q.eq("eventId", args.eventId).eq("teamNumber", stat.teamNumber),
-        )
-        .unique()
-      const doc = { eventId: args.eventId, refreshedAt: args.refreshedAt, ...stat }
-      if (existing) await ctx.db.patch(existing._id, doc)
-      else await ctx.db.insert("externalStats", doc)
-    }
-
-    for (const prediction of args.predictions) {
-      const existing = await ctx.db
-        .query("winPredictions")
-        .withIndex("by_eventId_and_matchNumber", (q) =>
-          q.eq("eventId", args.eventId).eq("matchNumber", prediction.matchNumber),
-        )
-        .unique()
-      const doc = {
-        eventId: args.eventId,
-        source: "statbotics",
-        refreshedAt: args.refreshedAt,
-        ...prediction,
-      }
-      if (existing) await ctx.db.patch(existing._id, doc)
-      else await ctx.db.insert("winPredictions", doc)
-    }
-
-    await ctx.db.patch(args.eventId, { statsRefreshedAt: args.refreshedAt })
-  },
-})

@@ -16,7 +16,10 @@ function climbLabel(score: number) {
 }
 
 export const list = query({
-  args: { eventId: v.id("events") },
+  args: {
+    eventId: v.id("events"),
+    xpScope: v.optional(v.union(v.literal("season"), v.literal("all"))),
+  },
   handler: async (ctx, args) => {
     const teams = await ctx.db
       .query("teams")
@@ -73,6 +76,9 @@ export const list = query({
           commonEndgameClimb: bestEndgame,
           pickTier,
           epa: stats?.epa,
+          xp: args.xpScope
+            ? (args.xpScope === "season" ? stats?.xpSeason?.xp : stats?.xpAll?.xp)
+            : stats?.xp,
           averageRp: stats?.averageRp,
         }
       })
@@ -80,7 +86,11 @@ export const list = query({
 })
 
 export const detail = query({
-  args: { eventId: v.id("events"), teamNumber: v.number() },
+  args: {
+    eventId: v.id("events"),
+    teamNumber: v.number(),
+    xpScope: v.optional(v.union(v.literal("season"), v.literal("all"))),
+  },
   handler: async (ctx, args) => {
     const team = await ctx.db
       .query("teams")
@@ -156,7 +166,15 @@ export const detail = query({
       team,
       pitReports,
       matchReports,
-      stats,
+      stats: stats && args.xpScope ? {
+        ...stats,
+        ...{
+          xp: undefined, match13Epa: undefined, autoXp: undefined,
+          teleopXp: undefined, endgameXp: undefined,
+          predictedRp1: undefined, predictedRp2: undefined, predictedRp3: undefined,
+        },
+        ...(args.xpScope === "season" ? stats.xpSeason : stats.xpAll),
+      } : stats,
       averages,
     }
   },

@@ -28,6 +28,7 @@ type Env = {
   readonly ADMIN_EMAILS: string | undefined;
   readonly JWKS: string | undefined;
   readonly JWT_PRIVATE_KEY: string | undefined;
+  readonly MATCH13_API_KEY: string | undefined;
   readonly NEXUS_API_KEY: string | undefined;
   readonly SITE_URL: string | undefined;
   readonly STATBOTICS_API_KEY: string | undefined;

@@ -134,7 +134,9 @@ export function PickListsRoute() {
           listId={selectedList._id}
           items={selectedList.items}
           teams={teams ?? []}
-          readOnly={selectedList.kind === "primary" && me?.role !== "admin"}
+          readOnly={
+            selectedList.kind === "primary" && me?.role !== "admin"
+          }
         />
       </section>
     )
@@ -235,7 +237,9 @@ export function PickListsRoute() {
               type="button"
               variant="ghost"
               onClick={() => void onRunConsensus()}
-              disabled={me?.role !== "admin" || !personalLists.length}
+              disabled={
+                me?.role !== "admin" || !personalLists.length
+              }
             >
               Preview
             </Button>
@@ -243,7 +247,9 @@ export function PickListsRoute() {
               type="button"
               className="bg-neutral-500 text-white hover:bg-neutral-600"
               onClick={() => void onApplyConsensus()}
-              disabled={me?.role !== "admin" || !latestConsensus}
+              disabled={
+                me?.role !== "admin" || !latestConsensus
+              }
             >
               Apply to primary
             </Button>

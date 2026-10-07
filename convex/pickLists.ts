@@ -2,7 +2,10 @@ import { v } from "convex/values"
 import type { MutationCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
-import { requireAdminFromDb, requireUser, requireUserFromDb } from "./lib/authz"
+import {
+  requireAdminFromDb,
+  requireApprovedUserFromDb,
+} from "./lib/authz"
 import { pickTierValidator } from "./validators"
 
 const tierWeights = {
@@ -44,7 +47,7 @@ async function ensurePrimaryList(ctx: MutationCtx, eventId: Id<"events">) {
 export const listForEvent = query({
   args: { eventId: v.id("events") },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await requireApprovedUserFromDb(ctx)
     const lists = await ctx.db
       .query("pickLists")
       .withIndex("by_eventId", (q) => q.eq("eventId", args.eventId))
@@ -69,7 +72,7 @@ export const listForEvent = query({
 export const createPersonal = mutation({
   args: { eventId: v.id("events"), name: v.string() },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await requireApprovedUserFromDb(ctx)
     const now = Date.now()
     return await ctx.db.insert("pickLists", {
       eventId: args.eventId,
@@ -98,10 +101,14 @@ export const moveTeam = mutation({
     rank: v.number(),
   },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await requireApprovedUserFromDb(ctx)
     const list = await ctx.db.get(args.pickListId)
     if (!list) throw new Error("Pick list not found")
-    if (list.kind === "primary" && user.role !== "admin") {
+    if (
+      list.kind === "primary" &&
+      user.role !== "admin" &&
+      user.role !== "superAdmin"
+    ) {
       throw new Error("Unauthorized")
     }
     if (list.kind === "personal" && list.ownerToken !== user.tokenIdentifier) {
@@ -140,16 +147,20 @@ export const moveTeams = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    let user: Awaited<ReturnType<typeof requireUserFromDb>>
+    let user: Awaited<ReturnType<typeof requireApprovedUserFromDb>>
     try {
-      user = await requireUserFromDb(ctx)
+      user = await requireApprovedUserFromDb(ctx)
     } catch {
       return { ok: false, error: "Sign in again before editing pick lists" }
     }
 
     const list = await ctx.db.get(args.pickListId)
     if (!list) return { ok: false, error: "Pick list not found" }
-    if (list.kind === "primary" && user.role !== "admin") {
+    if (
+      list.kind === "primary" &&
+      user.role !== "admin" &&
+      user.role !== "superAdmin"
+    ) {
       return { ok: false, error: "Admin only: primary pick list is read-only" }
     }
     if (list.kind === "personal" && list.ownerToken !== user.tokenIdentifier) {

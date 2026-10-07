@@ -1,4 +1,7 @@
 {
-  "buildCommand": "bunx convex deploy --cmd \"bun run build\" --cmd-url-env-var-name VITE_CONVEX_URL",
-  "outputDirectory": "dist"
+  "buildCommand": "node scripts/deploy.mjs",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

@@ -14,8 +14,11 @@ export type AuthUser = {
   tokenIdentifier: string
   email: string | null
   name: string | null
-  role: "admin" | "scout"
+  role: "superAdmin" | "admin" | "scout"
+  approvalStatus: "pending" | "approved" | "rejected"
 }
+
+export const SUPER_ADMIN_EMAIL = "luqman.a.khan101010@gmail.com"
 
 function normalizedAdminSet() {
   return new Set(
@@ -26,9 +29,14 @@ function normalizedAdminSet() {
   )
 }
 
-export function roleForIdentity(identity: UserIdentity): "admin" | "scout" {
+export function roleForIdentity(
+  identity: Pick<UserIdentity, "tokenIdentifier" | "email">,
+): "superAdmin" | "admin" | "scout" {
   const admins = normalizedAdminSet()
   const email = identity.email?.toLowerCase()
+  if (email === SUPER_ADMIN_EMAIL) {
+    return "superAdmin"
+  }
   if (email && admins.has(email)) {
     return "admin"
   }
@@ -49,12 +57,14 @@ export async function requireUser(ctx: AuthOnlyCtx): Promise<AuthUser> {
     email: identity.email ?? null,
     name: identity.name ?? null,
     role: roleForIdentity(identity),
+    approvalStatus:
+      roleForIdentity(identity) === "scout" ? "pending" : "approved",
   }
 }
 
 export async function requireAdmin(ctx: AuthOnlyCtx) {
   const user = await requireUser(ctx)
-  if (user.role !== "admin") {
+  if (user.role !== "admin" && user.role !== "superAdmin") {
     throw new Error("Unauthorized")
   }
   return user
@@ -73,24 +83,63 @@ export async function requireUserFromDb(ctx: QueryCtx | MutationCtx) {
   }
   const email =
     typeof authUser?.email === "string" ? authUser.email : user.email
-  const role = email
-    ? roleForIdentity({
-        tokenIdentifier: user.tokenIdentifier,
-        email,
-      } as UserIdentity)
-    : user.role
+  const name = typeof authUser?.name === "string" ? authUser.name : user.name
+  const member = await ctx.db
+    .query("members")
+    .withIndex("by_tokenIdentifier", (q) =>
+      q.eq("tokenIdentifier", user.tokenIdentifier),
+    )
+    .unique()
+  const bootstrapRole = roleForIdentity({
+    tokenIdentifier: user.tokenIdentifier,
+    email: email ?? undefined,
+  })
+  const role =
+    bootstrapRole === "superAdmin"
+      ? "superAdmin"
+      : member?.role ?? bootstrapRole
+  const approvalStatus =
+    role === "superAdmin" || role === "admin"
+      ? member?.approvalStatus === "rejected"
+        ? "rejected"
+        : "approved"
+      : member?.approvalStatus ?? (member ? "approved" : "pending")
 
   return {
     ...user,
     email,
+    name,
     role,
+    approvalStatus,
   }
 }
 
-export async function requireAdminFromDb(ctx: QueryCtx | MutationCtx) {
+export async function requireApprovedUserFromDb(
+  ctx: QueryCtx | MutationCtx,
+) {
   const user = await requireUserFromDb(ctx)
-  if (user.role !== "admin") {
+  if (user.approvalStatus !== "approved") {
+    throw new Error(
+      user.approvalStatus === "rejected"
+        ? "Account access was not approved"
+        : "Account is waiting for admin approval",
+    )
+  }
+  return user
+}
+
+export async function requireAdminFromDb(ctx: QueryCtx | MutationCtx) {
+  const user = await requireApprovedUserFromDb(ctx)
+  if (user.role !== "admin" && user.role !== "superAdmin") {
     throw new Error("Unauthorized")
+  }
+  return user
+}
+
+export async function requireSuperAdminFromDb(ctx: QueryCtx | MutationCtx) {
+  const user = await requireApprovedUserFromDb(ctx)
+  if (user.role !== "superAdmin") {
+    throw new Error("Super admin access required")
   }
   return user
 }

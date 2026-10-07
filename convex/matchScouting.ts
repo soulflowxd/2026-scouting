@@ -1,6 +1,9 @@
-import { v } from "convex/values"
+import { ConvexError, v } from "convex/values"
 import { mutation, query } from "./_generated/server"
-import { requireAdminFromDb, requireUser } from "./lib/authz"
+import {
+  requireAdminFromDb,
+  requireApprovedUserFromDb,
+} from "./lib/authz"
 import { matchReportInputValidator } from "./validators"
 
 const tagAllowlist = new Set([
@@ -59,7 +62,7 @@ export const claimsForMatch = query({
 export const claimRobot = mutation({
   args: { eventId: v.id("events"), matchNumber: v.number(), teamNumber: v.number() },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await requireApprovedUserFromDb(ctx)
     const activeForRobot = await ctx.db
       .query("matchRobotClaims")
       .withIndex("by_eventId_and_matchNumber_and_teamNumber_and_status", (q) =>
@@ -71,7 +74,7 @@ export const claimRobot = mutation({
       )
       .unique()
     if (activeForRobot && activeForRobot.scoutToken !== user.tokenIdentifier) {
-      throw new Error("Robot already claimed")
+      throw new ConvexError(`Robot already claimed by ${activeForRobot.scoutName ?? "another scout"}. Ask them or an admin to release it.`)
     }
     if (activeForRobot) return activeForRobot._id
 
@@ -86,7 +89,7 @@ export const claimRobot = mutation({
       )
       .unique()
     if (activeForScout && activeForScout.teamNumber !== args.teamNumber) {
-      throw new Error("Scout already claimed a robot in this match")
+      throw new ConvexError(`Scout already claimed team ${activeForScout.teamNumber} in this match. Release that claim before selecting another robot.`)
     }
 
     return await ctx.db.insert("matchRobotClaims", {
@@ -102,11 +105,15 @@ export const claimRobot = mutation({
 export const releaseClaim = mutation({
   args: { claimId: v.id("matchRobotClaims") },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await requireApprovedUserFromDb(ctx)
     const claim = await ctx.db.get(args.claimId)
-    if (!claim) throw new Error("Claim not found")
-    if (claim.scoutToken !== user.tokenIdentifier && user.role !== "admin") {
-      throw new Error("Unauthorized")
+    if (!claim) throw new ConvexError("Claim not found")
+    if (
+      claim.scoutToken !== user.tokenIdentifier &&
+      user.role !== "admin" &&
+      user.role !== "superAdmin"
+    ) {
+      throw new ConvexError("Only the scout who owns this claim or an admin can release it")
     }
     await ctx.db.patch(args.claimId, {
       status: "released",
@@ -131,7 +138,7 @@ export const adminReleaseClaim = mutation({
 export const saveReport = mutation({
   args: matchReportInputValidator,
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await requireApprovedUserFromDb(ctx)
     const claim = await ctx.db
       .query("matchRobotClaims")
       .withIndex("by_eventId_and_matchNumber_and_teamNumber_and_status", (q) =>
@@ -143,7 +150,7 @@ export const saveReport = mutation({
       )
       .unique()
     if (claim && claim.scoutToken !== user.tokenIdentifier) {
-      throw new Error("Robot already claimed by another scout")
+      throw new ConvexError("Robot already claimed by another scout")
     }
     if (!claim) {
       const activeForScout = await ctx.db
@@ -157,7 +164,7 @@ export const saveReport = mutation({
         )
         .unique()
       if (activeForScout && activeForScout.teamNumber !== args.teamNumber) {
-        throw new Error("Scout already claimed a robot in this match")
+        throw new ConvexError(`Scout already claimed team ${activeForScout.teamNumber} in this match. Release that claim first.`)
       }
       await ctx.db.insert("matchRobotClaims", {
         eventId: args.eventId,
@@ -197,10 +204,54 @@ export const saveReport = mutation({
       )
       .unique()
 
+    let reportId
     if (existing) {
       await ctx.db.patch(existing._id, doc)
-      return existing._id
+      reportId = existing._id
+    } else {
+      reportId = await ctx.db.insert("matchReports", doc)
     }
-    return await ctx.db.insert("matchReports", doc)
+
+    if (tags.includes("Broke down")) {
+      const members = (await ctx.db.query("members").take(500)).filter(
+        (member) =>
+          member.approvalStatus === undefined ||
+          member.approvalStatus === "approved",
+      )
+      const recipientTokens = new Set([
+        user.tokenIdentifier,
+        ...members.map((member) => member.tokenIdentifier),
+      ])
+      const createdAt = Date.now()
+      await Promise.all(
+        [...recipientTokens].map(async (recipientToken) => {
+          const duplicate = await ctx.db
+            .query("scoutNotifications")
+            .withIndex(
+              "by_recipientToken_and_eventId_and_matchNumber_and_teamNumber",
+              (q) =>
+                q
+                  .eq("recipientToken", recipientToken)
+                  .eq("eventId", args.eventId)
+                  .eq("matchNumber", args.matchNumber)
+                  .eq("teamNumber", args.teamNumber),
+            )
+            .unique()
+          if (!duplicate) {
+            await ctx.db.insert("scoutNotifications", {
+              recipientToken,
+              eventId: args.eventId,
+              kind: "robotBreakdown",
+              matchNumber: args.matchNumber,
+              teamNumber: args.teamNumber,
+              message: `Team ${args.teamNumber} broke down in QM${args.matchNumber}. Ask the team what failed on the robot.`,
+              createdAt,
+            })
+          }
+        }),
+      )
+    }
+
+    return reportId
   },
 })

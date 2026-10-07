@@ -23,9 +23,13 @@ export function EventSetupRoute() {
 
   async function onImport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    await runImport(eventKey)
+  }
+
+  async function runImport(key: string) {
     setPending(true)
     try {
-      const result = await importEvent({ eventKey })
+      const result = await importEvent({ eventKey: key })
       selectActiveEvent(result.eventId)
       toast.success(`Imported ${result.teamCount} teams`)
     } catch (error) {
@@ -140,6 +144,17 @@ export function EventSetupRoute() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 sm:justify-end">
+                {event.importStatus === "error" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void runImport(event.eventKey)}
+                    disabled={pending}
+                  >
+                    <UploadCloud aria-hidden="true" />
+                    Retry import
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant={isActive ? "secondary" : "default"}
