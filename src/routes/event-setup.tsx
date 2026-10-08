@@ -14,6 +14,7 @@ export function EventSetupRoute() {
   const me = useQuery(api.members.me)
   const { activeEvent, events, selectActiveEvent } = useActiveEvent()
   const createOrSelect = useMutation(api.events.createOrSelect)
+  const setScoutingEnabled = useMutation(api.events.setScoutingEnabled)
   const importEvent = useAction(api.imports.importEvent)
   const refreshStats = useAction(api.imports.refreshStats)
   const [eventKey, setEventKey] = useState("2026nvlv")
@@ -144,6 +145,12 @@ export function EventSetupRoute() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 sm:justify-end">
+                <Button type="button" variant={event.scoutingEnabled === false ? "default" : "outline"} disabled={pending} onClick={async () => {
+                  setPending(true)
+                  try { await setScoutingEnabled({ eventId: event._id, enabled: event.scoutingEnabled === false }); toast.success(event.scoutingEnabled === false ? "Scouting submissions opened" : "Scouting submissions closed") }
+                  catch { toast.error("Could not change scouting access") }
+                  finally { setPending(false) }
+                }}>{event.scoutingEnabled === false ? "Enable scouting" : "Disable scouting"}</Button>
                 {event.importStatus === "error" ? (
                   <Button
                     type="button"

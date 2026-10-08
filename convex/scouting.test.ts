@@ -1,21 +1,14 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from "convex-test"
-import { describe, expect, test } from "vitest"
+import { describe, expect, test, vi } from "vitest"
 import { api, internal } from "./_generated/api"
 import schema from "./schema"
 
 const modules = import.meta.glob("./**/*.ts")
 
 function setAdminEnv() {
-  const globalWithProcess = globalThis as typeof globalThis & {
-    process?: { env?: Record<string, string | undefined> }
-  }
-  globalWithProcess.process = {
-    env: {
-      ADMIN_EMAILS: "admin@example.com",
-      TBA_API_KEY: "test",
-    },
-  }
+  vi.stubEnv("ADMIN_EMAILS", "admin@example.com")
+  vi.stubEnv("TBA_API_KEY", "test")
 }
 
 function user(email: string, tokenIdentifier: string) {
@@ -54,6 +47,7 @@ async function seedEvent() {
   const eventId = await admin.mutation(api.events.createOrSelect, {
     eventKey: "2026nvlv",
   })
+  await admin.mutation(api.events.setScoutingEnabled, { eventId, enabled: true })
   await t.mutation(internal.importData.applyEventImport, {
     eventId,
     teams: [
@@ -88,7 +82,15 @@ describe("scouting backend", () => {
   test("pit configuration saves, updates and validates BPS", async () => {
     const { t, eventId } = await seedEvent()
     const scout = await approvedScout(t, "a@example.com", "scout-a")
+    const photoId = await t.run(async ctx => {
+      const id = await ctx.storage.store(new Blob(["test image"], { type: "image/png" }))
+      // convex-test omits contentType when storing blobs; simulate upload metadata.
+      // @ts-expect-error System metadata writes are test-fixture only.
+      await ctx.db.patch(id, { contentType: "image/png" })
+      return id
+    })
     const report = {
+      photoIds: [photoId],
       eventId, teamNumber: 1, canScoreFuelHub: true, canIntakeDepot: false,
       canIntakeFloor: true, canPreload: false, preloadCount: 0,
       canClimbLevel1: false, canClimbLevel2: false, canClimbLevel3: false,
@@ -100,6 +102,16 @@ describe("scouting backend", () => {
       autoPath: [[{ x: 10, y: 20 }, { x: 900, y: 450 }]],
     }
     const id = await scout.mutation(api.pit.save, report)
+    await expect(scout.mutation(api.pit.save, { ...report, electricalQuality: 0 })).rejects.toThrow("1 to 10")
+    await expect(scout.mutation(api.pit.save, { ...report, buildQuality: 10.5 })).rejects.toThrow("1 to 10")
+    await expect(scout.mutation(api.pit.save, { ...report, programmingLanguage: " " })).rejects.toThrow("programming language")
+    await scout.mutation(api.pit.save, { ...report, electricalQuality: 8, buildQuality: 9, programmingLanguage: " Java " })
+    expect((await scout.query(api.pit.getForTeam, { eventId: report.eventId, teamNumber: report.teamNumber }))[0]).toMatchObject({ electricalQuality: 8, buildQuality: 9, programmingLanguage: "Java" })
+    await expect(scout.mutation(api.pit.save, { ...report, photoIds: [] })).rejects.toThrow("at least one robot photo")
+    await expect(scout.mutation(api.pit.save, { ...report, photoIds: undefined })).rejects.toThrow("at least one robot photo")
+    const invalidPhoto = await t.run(async ctx => await ctx.storage.store(new Blob(["not an image"], { type: "text/plain" })))
+    await expect(scout.mutation(api.pit.save, { ...report, photoIds: [invalidPhoto] })).rejects.toThrow("images under 10 MB")
+    await expect(scout.mutation(api.pit.save, { ...report, photoIds: Array(7).fill(photoId) })).rejects.toThrow("Maximum 6")
     expect((await scout.query(api.pit.getForTeam, { eventId, teamNumber: 1 }))[0]).toMatchObject(report)
     await expect(scout.mutation(api.pit.save, { ...report, bps: -1 })).rejects.toThrow("BPS")
     await expect(scout.mutation(api.pit.save, { ...report, intakeBps: -1 })).rejects.toThrow("non-negative")
@@ -318,9 +330,33 @@ describe("scouting backend", () => {
     await scoutB.mutation(api.notifications.markRead, {
       notificationId: alertsB[0]._id,
     })
-    expect((await scoutB.query(api.notifications.mine, {}))[0].readAt).toBeTypeOf(
-      "number",
-    )
+    await scoutB.mutation(api.notifications.markAllRead, {})
+    expect(await scoutB.query(api.notifications.mine, {})).toHaveLength(1)
+    await expect(scoutB.mutation(api.notifications.submitBreakdownFollowUp, {
+      notificationId: alertsB[0]._id, whatBroke: "Chain snapped", cause: "  ", repairStatus: "Fixed", notes: "",
+    })).rejects.toThrow("Describe what caused")
+    await expect(scoutA.mutation(api.notifications.submitBreakdownFollowUp, {
+      notificationId: alertsB[0]._id, whatBroke: "Chain", cause: "", repairStatus: "Fixed", notes: "",
+    })).rejects.toThrow("Notification not found")
+    await expect(scoutB.mutation(api.notifications.submitBreakdownFollowUp, {
+      notificationId: alertsB[0]._id, whatBroke: "  ", cause: "", repairStatus: "Fixed", notes: "",
+    })).rejects.toThrow("Describe what broke")
+    expect(await scoutB.query(api.notifications.mine, {})).toHaveLength(1)
+    const followUpId = await scoutB.mutation(api.notifications.submitBreakdownFollowUp, {
+      notificationId: alertsB[0]._id, whatBroke: "Intake chain snapped", cause: "Loose tension", repairStatus: "Replaced and tested", notes: "Ready for next match",
+    })
+    expect(await scoutA.query(api.notifications.mine, {})).toEqual([])
+    expect(await scoutB.query(api.notifications.mine, {})).toEqual([])
+    expect(await admin.query(api.notifications.mine, {})).toEqual([])
+    expect(await lateScout.query(api.notifications.mine, {})).toEqual([])
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(followUpId)).toMatchObject({
+        teamNumber: 1, matchNumber: 1, whatBroke: "Intake chain snapped", scoutToken: "scout-b",
+      })
+    })
+    expect(await scoutA.mutation(api.notifications.submitBreakdownFollowUp, {
+      notificationId: alertsA[0]._id, whatBroke: "Duplicate", cause: "Loose tension", repairStatus: "Fixed", notes: "",
+    })).toBe(followUpId)
   })
 
   test("scout cannot write another user's pick list", async () => {
@@ -339,6 +375,24 @@ describe("scouting backend", () => {
         rank: 0,
       }),
     ).rejects.toThrow("Unauthorized")
+  })
+
+  test("only admins can edit the main pick list; scouts can edit their own", async () => {
+    const { t, eventId } = await seedEvent()
+    const admin = t.withIdentity(user("admin@example.com", "admin-token"))
+    const scout = await approvedScout(t, "scout@example.com", "scout")
+    const pickListId = await admin.mutation(api.pickLists.ensurePrimary, { eventId })
+    const placement = { teamNumber: 1, tier: "tier1" as const, rank: 0 }
+    await expect(scout.mutation(api.pickLists.ensurePrimary, { eventId })).rejects.toThrow("Unauthorized")
+    await expect(scout.mutation(api.pickLists.moveTeam, { pickListId, ...placement })).rejects.toThrow("Unauthorized")
+    expect(await scout.mutation(api.pickLists.moveTeams, { pickListId, placements: [placement] })).toMatchObject({ ok: false })
+    await expect(scout.mutation(api.pickLists.runConsensus, { eventId })).rejects.toThrow("Unauthorized")
+    const runId = await admin.mutation(api.pickLists.runConsensus, { eventId })
+    await expect(scout.mutation(api.pickLists.applyConsensusToPrimary, { consensusRunId: runId })).rejects.toThrow("Unauthorized")
+    expect((await scout.query(api.pickLists.listForEvent, { eventId }))[0].items).toHaveLength(0)
+    expect(await admin.mutation(api.pickLists.moveTeams, { pickListId, placements: [placement] })).toMatchObject({ ok: true })
+    const personalId = await scout.mutation(api.pickLists.createPersonal, { eventId, name: "My list" })
+    expect(await scout.mutation(api.pickLists.moveTeams, { pickListId: personalId, placements: [placement] })).toMatchObject({ ok: true })
   })
 
   test("consensus merge is deterministic", async () => {

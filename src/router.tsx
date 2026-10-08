@@ -6,6 +6,9 @@ export const router = createBrowserRouter([
     path: "/",
     element: <RootRoute />,
     children: [
+      { path: "*", lazy: async () => ({ Component: (await import("@/routes/not-found")).NotFoundRoute }) },
+      { path: "team-mash", lazy: async () => ({ Component: (await import("@/routes/team-mash")).TeamMashRoute }) },
+      { path: "account", lazy: async () => ({ Component: (await import("@/routes/account")).AccountRoute }) },
       {
         index: true,
         lazy: async () => ({

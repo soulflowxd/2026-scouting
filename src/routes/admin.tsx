@@ -1,11 +1,13 @@
 import { useMutation, useQuery } from "convex/react"
-import { Check, Search, ShieldCheck, UserCog, X } from "lucide-react"
+import { Check, KeyRound, Pencil, Search, ShieldCheck, UserCog, X } from "lucide-react"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { PasswordForm } from "@/components/password-form"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 
 export function AdminRoute() {
   const me = useQuery(api.members.me)
@@ -13,7 +15,15 @@ export function AdminRoute() {
   const members = useQuery(api.members.listForAdmin, isAdmin ? {} : "skip")
   const setApproval = useMutation(api.members.setApproval)
   const setAdminRole = useMutation(api.members.setAdminRole)
+  const setName = useMutation(api.members.setName)
+  const setTeamNumber = useMutation(api.members.setTeamNumber)
+  const mergeDuplicates = useMutation(api.members.mergeDuplicates)
+  const [nameTarget, setNameTarget] = useState<{ id: Id<"members">; email: string } | null>(null)
+  const [firstName, setFirstName] = useState("")
+  const [lastName, setLastName] = useState("")
+  const [savingName, setSavingName] = useState(false)
   const [search, setSearch] = useState("")
+  const [passwordTarget, setPasswordTarget] = useState<{ id: Id<"members">; email: string } | null>(null)
   const [workingId, setWorkingId] = useState<Id<"members"> | null>(null)
 
   const visibleMembers = useMemo(() => {
@@ -123,8 +133,34 @@ export function AdminRoute() {
                 <p className="truncate text-sm text-muted-foreground">
                   {member.email || "No email available"}
                 </p>
+                <label className="mt-2 flex items-center gap-2 text-sm">
+                  Team number
+                  <select aria-label={`Team number for ${member.name || member.email || "scout"}`} value={member.teamNumber ?? ""} disabled={working} className="rounded-md border bg-background px-2 py-1" onChange={async event => {
+                    const teamNumber = Number(event.target.value) as 9128 | 10340
+                    setWorkingId(member._id)
+                    try { await setTeamNumber({ memberId: member._id, teamNumber }); toast.success("Team number updated") }
+                    catch { toast.error("Could not update team number") }
+                    finally { setWorkingId(null) }
+                  }}>
+                    <option value="" disabled>Not assigned</option>
+                    <option value="9128">9128</option><option value="10340">10340</option>
+                  </select>
+                </label>
               </div>
               <div className="flex flex-wrap gap-2 md:justify-end">
+                {(member.role === "scout" || me?.isSuperAdmin || me?.member?._id === member._id) && <Button type="button" size="sm" variant="outline" onClick={() => {
+                  setNameTarget({ id: member._id, email: member.email ?? "" })
+                  const [first = "", ...rest] = (member.name ?? "").trim().split(/\s+/)
+                  setFirstName(first)
+                  setLastName(rest.join(" "))
+                }}><Pencil />Edit name</Button>}
+                {(member.role === "scout" || me?.isSuperAdmin) && member.email && members?.some(other => other._id !== member._id && other.email === member.email) && <Button type="button" size="sm" variant="outline" disabled={working} onClick={async () => {
+                  setWorkingId(member._id)
+                  try { const count = await mergeDuplicates({ memberId: member._id }); toast.success(count ? "Duplicate entries merged" : "These entries belong to different accounts") }
+                  catch (error) { toast.error(error instanceof Error ? error.message : "Could not merge entries") }
+                  finally { setWorkingId(null) }
+                }}>Merge duplicate entries</Button>}
+                {!isProtected && (member.role === "scout" || me?.isSuperAdmin) && member.email && <Button type="button" size="sm" variant="outline" onClick={() => setPasswordTarget({ id: member._id, email: member.email! })}><KeyRound />Reset password</Button>}
                 {member.approvalStatus !== "approved" && !isProtected && (
                   <Button
                     type="button"
@@ -169,6 +205,29 @@ export function AdminRoute() {
           )
         })}
       </div>
+      <Dialog open={passwordTarget !== null} onOpenChange={(open) => { if (!open) setPasswordTarget(null) }}>
+        <DialogContent><DialogHeader><DialogTitle>Reset password</DialogTitle><DialogDescription>{passwordTarget?.email}</DialogDescription></DialogHeader>
+          {passwordTarget && <PasswordForm key={passwordTarget.id} memberId={passwordTarget.id} onSaved={() => setPasswordTarget(null)} />}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={nameTarget !== null} onOpenChange={open => { if (!open && !savingName) setNameTarget(null) }}>
+        <DialogContent><DialogHeader><DialogTitle>Edit name</DialogTitle><DialogDescription>{nameTarget?.email}</DialogDescription></DialogHeader>
+          <form className="grid gap-4" onSubmit={async event => {
+            event.preventDefault()
+            if (!nameTarget || savingName) return
+            setSavingName(true)
+            try { await setName({ memberId: nameTarget.id, name: `${firstName.trim()} ${lastName.trim()}` }); setNameTarget(null); toast.success("Name updated") }
+            catch (error) { toast.error(error instanceof Error ? error.message : "Could not update name") }
+            finally { setSavingName(false) }
+          }}>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm">First name<Input autoFocus required autoComplete="given-name" maxLength={49} value={firstName} onChange={event => setFirstName(event.target.value)} /></label>
+              <label className="grid gap-2 text-sm">Last name<Input required autoComplete="family-name" maxLength={50} value={lastName} onChange={event => setLastName(event.target.value)} /></label>
+            </div>
+            <Button type="submit" disabled={savingName || !firstName.trim() || !lastName.trim()}>{savingName ? "Saving..." : "Save name"}</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }

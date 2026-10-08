@@ -323,6 +323,7 @@ function MatchForm({
   teamNumber: number
 }) {
   const claims = useQuery(api.matchScouting.claimsForMatch, { eventId, matchNumber })
+  const scoutingClosed = useQuery(api.events.list)?.find(event => event._id === eventId)?.scoutingEnabled === false
   const me = useQuery(api.members.me)
   const releaseClaim = useMutation(api.matchScouting.releaseClaim)
   const claimRobot = useMutation(api.matchScouting.claimRobot)
@@ -398,7 +399,7 @@ function MatchForm({
           </div>
           <div className="flex flex-wrap gap-2">
           {myClaim && <Button type="button" variant="outline" disabled={claimPending} onClick={() => void onRelease()}>Release team {myClaim.teamNumber}</Button>}
-          <Button type="button" onClick={() => void onClaim()} disabled={claims === undefined || me === undefined || Boolean(claim) || Boolean(myClaim) || claimPending}>
+          <Button type="button" onClick={() => void onClaim()} disabled={scoutingClosed || claims === undefined || me === undefined || Boolean(claim) || Boolean(myClaim) || claimPending}>
             Claim
           </Button>
           </div>
@@ -518,7 +519,7 @@ function MatchForm({
           ))}
         </div>
       </FormSection>
-      <Button type="button" size="lg" onClick={() => void onSubmit()}>
+      <Button type="button" size="lg" disabled={scoutingClosed} onClick={() => void onSubmit()}>
         Submit match report
       </Button>
     </div>

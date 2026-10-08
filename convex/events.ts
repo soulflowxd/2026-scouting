@@ -40,10 +40,20 @@ export const createOrSelect = mutation({
     }
 
     return await ctx.db.insert("events", {
+      scoutingEnabled: false,
       eventKey,
       importStatus: "empty",
       activeAt: Date.now(),
       createdByToken: admin.tokenIdentifier,
     })
+  },
+})
+
+export const setScoutingEnabled = mutation({
+  args: { eventId: v.id("events"), enabled: v.boolean() },
+  handler: async (ctx, args) => {
+    await requireAdminFromDb(ctx)
+    if (!await ctx.db.get(args.eventId)) throw new Error("Event not found")
+    await ctx.db.patch(args.eventId, { scoutingEnabled: args.enabled })
   },
 })

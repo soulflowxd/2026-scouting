@@ -1,4 +1,5 @@
 {
+  "installCommand": "bun install",
   "buildCommand": "node scripts/deploy.mjs",
   "outputDirectory": "dist",
   "rewrites": [

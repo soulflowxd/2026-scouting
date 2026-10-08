@@ -33,6 +33,8 @@ type Env = {
   readonly SITE_URL: string | undefined;
   readonly STATBOTICS_API_KEY: string | undefined;
   readonly TBA_API_KEY: string;
+  readonly VAPID_PRIVATE_KEY: string | undefined;
+  readonly VAPID_PUBLIC_KEY: string | undefined;
 };
 
 /**

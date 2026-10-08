@@ -1,6 +1,6 @@
 import { useAction, useMutation, useQuery } from "convex/react"
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { MapPinned, RefreshCw } from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { Camera, Upload, MapPinned, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { eventLabel, useActiveEvent } from "@/lib/active-event"
 import { PitMap } from "@/components/pit-map"
+import { PitPhotos } from "@/components/pit-photos"
 import { AutoPath, type PathPoint } from "@/components/auto-path"
 import { pitMeasurements, type MeasurementKey } from "@/lib/pit-measurements"
 import type { NexusMap } from "../../convex/lib/nexusMap"
@@ -19,6 +20,7 @@ import type { NexusMap } from "../../convex/lib/nexusMap"
 type PitFormState = Record<MeasurementKey, string> & {
   canScoreFuelHub: boolean
   canIntakeDepot: boolean
+  canIntakeOutpost: boolean
   canIntakeFloor: boolean
   canPreload: boolean
   preloadCount: number
@@ -33,6 +35,9 @@ type PitFormState = Record<MeasurementKey, string> & {
   tread: string
   motorBrand: string
   robotArchitecture: string
+  electricalQuality: string
+  buildQuality: string
+  programmingLanguage: string
   autoDescription: string
   autoScore: string
   teleopScore: string
@@ -46,6 +51,7 @@ const emptyPitForm: PitFormState = {
   fuelCapacity: "", intakeBps: "", framePerimeter: "", frameLength: "", frameWidth: "", weight: "", overallLength: "", overallWidth: "",
   canScoreFuelHub: false,
   canIntakeDepot: false,
+  canIntakeOutpost: false,
   canIntakeFloor: false,
   canPreload: false,
   preloadCount: 0,
@@ -60,6 +66,9 @@ const emptyPitForm: PitFormState = {
   tread: "",
   motorBrand: "",
   robotArchitecture: "",
+  electricalQuality: "",
+  buildQuality: "",
+  programmingLanguage: "",
   autoDescription: "",
   autoScore: "",
   teleopScore: "",
@@ -164,7 +173,7 @@ export function PitScoutingRoute() {
                   onClick={() => setSelectedTeam(team.teamNumber)}
                   className="grid gap-2 rounded-xl border bg-card p-4 text-left shadow-sm"
                 >
-                  <p className="text-xl font-semibold">{team.teamNumber}</p>
+                  <p className="text-xl font-semibold">{team.eventTeamAlias ?? team.teamNumber}</p>
                   <p className="text-sm text-muted-foreground">{team.nickname}</p>
                   {pitLocation ? (
                     <span className="rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-sm font-medium text-primary">
@@ -200,11 +209,19 @@ function PitForm({
   onBack: () => void
 }) {
   const reports = useQuery(api.pit.getForTeam, { eventId, teamNumber })
+  const scoutingClosed = useQuery(api.events.list)?.find(event => event._id === eventId)?.scoutingEnabled === false
   const save = useMutation(api.pit.save)
+  const generateUploadUrl = useMutation(api.pit.generateUploadUrl)
+  const [photoIds, setPhotoIds] = useState<Id<"_storage">[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const cameraInput = useRef<HTMLInputElement>(null)
+  const uploadInput = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState<PitFormState>(emptyPitForm)
 
   useEffect(() => {
     const latest = reports?.[0]
+    setPhotoIds(latest?.photoIds ?? [])
     if (latest) {
       setForm({
         fuelCapacity: latest.fuelCapacity?.toString() ?? "",
@@ -217,6 +234,7 @@ function PitForm({
         overallWidth: latest.overallWidth?.toString() ?? "",
         canScoreFuelHub: latest.canScoreFuelHub,
         canIntakeDepot: latest.canIntakeDepot,
+        canIntakeOutpost: latest.canIntakeOutpost ?? false,
         canIntakeFloor: latest.canIntakeFloor,
         canPreload: latest.canPreload,
         preloadCount: latest.preloadCount,
@@ -231,6 +249,9 @@ function PitForm({
         tread: latest.tread ?? "",
         motorBrand: latest.motorBrand ?? "",
         robotArchitecture: latest.robotArchitecture ?? "",
+        electricalQuality: latest.electricalQuality?.toString() ?? "",
+        buildQuality: latest.buildQuality?.toString() ?? "",
+        programmingLanguage: latest.programmingLanguage ?? "",
         autoDescription: latest.autoDescription ?? "",
         autoScore: latest.autoScore === undefined ? "" : String(latest.autoScore),
         teleopScore: latest.teleopScore === undefined ? "" : String(latest.teleopScore),
@@ -247,7 +268,27 @@ function PitForm({
   const setBool = (key: keyof PitFormState, value: boolean) =>
     setForm((current) => ({ ...current, [key]: value }))
 
+  async function uploadPhotos(files: File[]) {
+    if (!files.length || uploading || saving) return
+    if (photoIds.length + files.length > 6) { toast.error("Maximum 6 robot photos"); return }
+    if (files.some(file => !["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type) || file.size > 10 * 1024 * 1024)) { toast.error("Choose JPG, PNG, WebP or GIF images under 10 MB"); return }
+    setUploading(true)
+    try {
+      for (const file of files) {
+        const url = await generateUploadUrl({})
+        const response = await fetch(url, { method: "POST", headers: { "Content-Type": file.type }, body: file })
+        if (!response.ok) throw new Error("Photo upload failed. Try again.")
+        const { storageId } = await response.json() as { storageId: Id<"_storage"> }
+        setPhotoIds(current => [...current, storageId])
+      }
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Photo upload failed") }
+    finally { setUploading(false) }
+  }
+
   async function onSubmit() {
+    if (uploading || saving) return
+    if (!photoIds.length) { toast.error("Upload at least one robot photo before submitting"); return }
+    setSaving(true)
     try {
       const bps = form.bps.trim() === "" ? undefined : Number(form.bps)
       if (bps !== undefined && (!Number.isFinite(bps) || bps < 0)) {
@@ -272,12 +313,19 @@ function PitForm({
         toast.error("Fuel capacity must be a whole number")
         return
       }
-      await save({ eventId, teamNumber, ...form, ...scoring, ...measurements, bps })
+      const electricalQuality = Number(form.electricalQuality)
+      const buildQuality = Number(form.buildQuality)
+      if ([electricalQuality, buildQuality].some(value => !Number.isInteger(value) || value < 1 || value > 10)) {
+        toast.error("Rate electrical and build quality from 1 to 10")
+        return
+      }
+      if (!form.programmingLanguage.trim()) { toast.error("Ask which programming language they use, or enter Unknown"); return }
+      await save({ eventId, teamNumber, ...form, ...scoring, ...measurements, electricalQuality, buildQuality, programmingLanguage: form.programmingLanguage.trim(), bps, photoIds })
       toast.success(`Saved pit report for ${teamNumber}`)
       onBack()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Save failed")
-    }
+    } finally { setSaving(false) }
   }
 
   return (
@@ -291,9 +339,29 @@ function PitForm({
           Back
         </Button>
       </div>
+      <FormSection title="Robot photos">
+        <p className="text-sm text-muted-foreground">{photoIds.length}/6 photos · At least 1 required</p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" disabled={uploading || saving || reports === undefined || photoIds.length >= 6} onClick={() => cameraInput.current?.click()}><Camera />Take photo</Button>
+          <Button type="button" variant="outline" disabled={uploading || saving || reports === undefined || photoIds.length >= 6} onClick={() => uploadInput.current?.click()}><Upload />Upload photos</Button>
+        </div>
+        <input ref={cameraInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif" capture="environment" className="hidden" aria-label="Take robot photo" onChange={event => {
+          const files = Array.from(event.target.files ?? [])
+          event.target.value = ""
+          void uploadPhotos(files)
+        }} />
+        <input ref={uploadInput} type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" aria-label="Upload robot photos" onChange={event => {
+          const files = Array.from(event.target.files ?? [])
+          event.target.value = ""
+          void uploadPhotos(files)
+        }} />
+        {uploading && <p role="status" className="text-sm text-muted-foreground">Uploading photos...</p>}
+        <PitPhotos photoIds={photoIds} onRemove={uploading || saving ? undefined : id => setPhotoIds(current => current.filter(photo => photo !== id))} />
+      </FormSection>
       <FormSection title="Fuel">
         <CheckRow label="Scores Fuel in Hub" checked={form.canScoreFuelHub} onChange={(value) => setBool("canScoreFuelHub", value)} />
         <CheckRow label="Intakes from Depot" checked={form.canIntakeDepot} onChange={(value) => setBool("canIntakeDepot", value)} />
+        <CheckRow label="Intakes from Outpost" checked={form.canIntakeOutpost} onChange={(value) => setBool("canIntakeOutpost", value)} />
         <CheckRow label="Intakes floor/Neutral Zone" checked={form.canIntakeFloor} onChange={(value) => setBool("canIntakeFloor", value)} />
         <CheckRow label="Can preload Fuel" checked={form.canPreload} onChange={(value) => setBool("canPreload", value)} />
         <Stepper
@@ -357,6 +425,24 @@ function PitForm({
           </div>
         </div>
       </FormSection>
+      <FormSection title="Build, electrical and programming">
+        <p className="text-xs text-muted-foreground">Rate quality from 1 (poor) to 10 (excellent). Check wiring, connections, mounting and overall construction.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {([["electricalQuality", "Electrical quality"], ["buildQuality", "Build quality"]] as const).map(([key, label]) => (
+            <div key={key} className="grid gap-2">
+              <Label htmlFor={key}>{label} (1–10)</Label>
+              <select id={key} required value={form[key]} className="h-9 rounded-md border bg-background px-3 text-sm" onChange={event => setForm(current => ({ ...current, [key]: event.target.value }))}>
+                <option value="" disabled>Choose rating</option>
+                {Array.from({ length: 10 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="programmingLanguage">What programming language do they use?</Label>
+          <Input id="programmingLanguage" required maxLength={100} value={form.programmingLanguage} onChange={event => setForm(current => ({ ...current, programmingLanguage: event.target.value }))} placeholder="Java, C++, Python, LabVIEW, or Unknown" />
+        </div>
+      </FormSection>
       <FormSection title="Capacity and dimensions">
         <div className="grid gap-3 sm:grid-cols-2">
           {pitMeasurements.map(([key, label, step]) => <div key={key} className="grid gap-2">
@@ -396,8 +482,8 @@ function PitForm({
           />
         </div>
       </FormSection>
-      <Button type="button" size="lg" onClick={() => void onSubmit()}>
-        Submit pit report
+      <Button type="button" size="lg" disabled={scoutingClosed || uploading || saving || !photoIds.length || reports === undefined} onClick={() => void onSubmit()}>
+        {saving ? "Saving..." : "Submit pit report"}
       </Button>
     </div>
   )

@@ -1,10 +1,13 @@
 import {
   DndContext,
+  DragOverlay,
   type DragEndEvent,
+  type CollisionDetection,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
-  rectIntersection,
+  closestCenter,
+  pointerWithin,
   useDroppable,
   useSensor,
   useSensors,
@@ -26,9 +29,21 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { eventLabel, useActiveEvent } from "@/lib/active-event"
 import { tierLabels } from "@/lib/labels"
+import { TeamDetailDialog } from "@/routes/teams"
+import { TeamAvatar } from "@/components/team-avatar"
+import { useMashRatings } from "@/lib/use-mash-ratings"
+import { useTeamColors, type TeamColors } from "@/lib/team-colors"
 
 const columns = ["tier1", "tier2", "tier3", "doNotPick", "uncategorized"] as const
 type Tier = (typeof columns)[number]
+
+// A card and its containing column can both collide. Prefer the card under
+// the pointer so a move doesn't alternate between insertion and appending.
+const boardCollision: CollisionDetection = (args) => {
+  const hits = args.pointerCoordinates ? pointerWithin(args) : closestCenter(args)
+  const cards = hits.filter(hit => String(hit.id).startsWith("team:"))
+  return cards.length ? cards : hits
+}
 
 type BoardItem = {
   teamNumber: number
@@ -127,10 +142,15 @@ export function PickListsRoute() {
             <h1 className="mt-2 truncate text-2xl font-semibold">{selectedList.name}</h1>
           </div>
           <span className="shrink-0 rounded-md border px-2 py-1 text-xs text-muted-foreground">
-            {selectedList.kind === "primary" ? "Primary" : "Personal"}
+            {selectedList.kind === "primary" ? "Main · admin editing only" : "Personal"}
           </span>
         </div>
+        {selectedList.kind === "primary" && me?.role !== "admin" && (
+          <p className="text-sm text-muted-foreground">The main pick list is read-only for scouts. Create or open your personal pick list to rank teams.</p>
+        )}
         <PickBoard
+          key={selectedList._id}
+          eventId={activeEvent._id}
           listId={selectedList._id}
           items={selectedList.items}
           teams={teams ?? []}
@@ -183,7 +203,7 @@ export function PickListsRoute() {
           <div className="mt-10">
             <h2 className="text-lg font-semibold">Primary pick list</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              View and edit the shared primary board.
+              View the shared main board. Only admins can edit it.
             </p>
           </div>
         </button>
@@ -260,16 +280,25 @@ export function PickListsRoute() {
   )
 }
 function PickBoard({
+  eventId,
   listId,
   items,
   teams,
   readOnly,
 }: {
+  eventId: Id<"events">
   listId: Id<"pickLists">
   items: BoardItem[]
   teams: {
+    avatar?: string
+    eventTeamAlias?: string
     teamNumber: number
     nickname: string
+    epa?: number
+    averageRp?: number
+    xp?: number
+    eventRank?: number
+    picked: boolean
     pitScouted: boolean
     averageDriverRating: number
     averageTeleopFuel: number
@@ -278,9 +307,20 @@ function PickBoard({
   readOnly: boolean
 }) {
   const moveTeams = useMutation(api.pickLists.moveTeams)
+  const teamColors = useTeamColors(teams.map(team => team.teamNumber))
+  const me = useQuery(api.members.me)
+  const ownTeamNumber = me?.teamNumber
+  const mashRatings = useMashRatings(eventId)
+  const ownEventRank = teams.find(team => team.teamNumber === ownTeamNumber)?.eventRank
+  const [pendingPlacements, setPendingPlacements] = useState<BoardItem[] | null>(null)
+  const savingMove = useRef(false)
+  const [draggedTeam, setDraggedTeam] = useState<number | null>(null)
+  const setPicked = useMutation(api.teams.setPicked)
+  const [selectedTeam, setSelectedTeam] = useState<number | null>(null)
+  const [savingTeam, setSavingTeam] = useState<number | null>(null)
   const [teamSearch, setTeamSearch] = useState("")
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, {
       activationConstraint: { delay: 120, tolerance: 8 },
     }),
@@ -290,16 +330,29 @@ function PickBoard({
   )
   const boardItems = useMemo(() => {
     const itemMap = new Map(items.map((item) => [item.teamNumber, item]))
+    for (const placement of pendingPlacements ?? []) itemMap.set(placement.teamNumber, placement)
     return teams.map((team, index) => ({
       ...team,
+      colors: teamColors[team.teamNumber],
+      mashElo: mashRatings.get(team.teamNumber)?.score,
+      higherRankedThanOwnTeam: team.teamNumber !== ownTeamNumber && team.eventRank !== undefined && ownEventRank !== undefined && team.eventRank < ownEventRank,
+      ownTeamNumber,
       ...(itemMap.get(team.teamNumber) ?? {
         teamNumber: team.teamNumber,
         tier: "uncategorized",
         rank: index,
       }),
     }))
-  }, [items, teams])
+  }, [items, teams, pendingPlacements, ownTeamNumber, ownEventRank, teamColors, mashRatings])
   const normalizedSearch = teamSearch.trim().toLowerCase()
+  async function togglePicked(teamNumber: number, picked: boolean) {
+    setSavingTeam(teamNumber)
+    try {
+      await setPicked({ eventId, teamNumber, picked })
+    } catch {
+      toast.error("Could not update picked status. Please try again.")
+    } finally { setSavingTeam(null) }
+  }
   const firstSearchMatch = useMemo(() => {
     if (!normalizedSearch) return null
     for (const tier of columns) {
@@ -313,7 +366,8 @@ function PickBoard({
   }, [boardItems, normalizedSearch])
 
   async function onDragEnd(event: DragEndEvent) {
-    if (readOnly) return
+    setDraggedTeam(null)
+    if (readOnly || savingMove.current) return
     const { active, over } = event
     if (!over) return
     const activeId = String(active.id)
@@ -337,36 +391,60 @@ function PickBoard({
     const targetItems = boardItems
       .filter((item) => item.tier === targetTier && item.teamNumber !== activeTeam)
       .sort((a, b) => a.rank - b.rank)
-    const insertAt = overTeam
+    if (active.id === over.id) return
+    let insertAt = overTeam
       ? Math.max(0, targetItems.findIndex((item) => item.teamNumber === overTeam.teamNumber))
       : targetItems.length
+    if (overTeam) {
+      const translated = active.rect.current.translated
+      const insertAfter = translated
+        ? translated.top + translated.height / 2 > over.rect.top + over.rect.height / 2
+        : current.tier === targetTier && current.rank < overTeam.rank
+      if (insertAfter) insertAt += 1
+    }
     targetItems.splice(insertAt, 0, { ...current, tier: targetTier })
+
+    const placements = targetItems.map((item, rank) => ({ teamNumber: item.teamNumber, tier: targetTier, rank }))
+    if (current.tier !== targetTier) {
+      placements.push(...boardItems
+        .filter(item => item.tier === current.tier && item.teamNumber !== activeTeam)
+        .sort((a, b) => a.rank - b.rank)
+        .map((item, rank) => ({ teamNumber: item.teamNumber, tier: item.tier as Tier, rank })))
+    }
+    // Move immediately, retaining the new layout until Convex acknowledges it.
+    savingMove.current = true
+    setPendingPlacements(placements)
 
     try {
       const result = await moveTeams({
         pickListId: listId,
-        placements: targetItems.map((item, rank) => ({
-          teamNumber: item.teamNumber,
-          tier: targetTier,
-          rank,
-        })),
+        placements,
       })
       if (!result.ok) {
         toast.error(result.error)
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Move failed")
+    } finally {
+      savingMove.current = false
+      setPendingPlacements(null)
     }
   }
 
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={rectIntersection}
+      collisionDetection={boardCollision}
+      onDragStart={({ active }) => setDraggedTeam(Number(String(active.id).replace("team:", "")))}
+      onDragCancel={() => setDraggedTeam(null)}
       onDragEnd={(event) => void onDragEnd(event)}
     >
       <div className="flex min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden">
-        <div className="flex shrink-0 justify-end">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">Click a team for pit reports and breakdowns. Admins can mark picked teams to cross them out across all lists.</p>
+          <p className="text-xs text-muted-foreground">
+            {ownTeamNumber === undefined ? "Ask an admin to assign your team number for standings comparisons." : ownEventRank === undefined ? `Event rank for team ${ownTeamNumber} is unavailable. Refresh event stats to load standings.` : `Your team ${ownTeamNumber} is ranked #${ownEventRank}. Higher-ranked teams are flagged, but can go anywhere in your list.`}
+          </p>
           <div className="relative w-full sm:w-64">
             <Search
               className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -387,9 +465,12 @@ function PickBoard({
             <PickColumn
               key={tier}
               tier={tier}
-              readOnly={readOnly}
+              readOnly={readOnly || pendingPlacements !== null}
               searchQuery={normalizedSearch}
               firstSearchMatch={firstSearchMatch}
+              onSelect={setSelectedTeam}
+              onPicked={(teamNumber, picked) => void togglePicked(teamNumber, picked)}
+              savingTeam={savingTeam}
               items={boardItems
                 .filter((item) => item.tier === tier)
                 .sort((a, b) => a.rank - b.rank)}
@@ -397,23 +478,52 @@ function PickBoard({
           ))}
         </div>
       </div>
+      <DragOverlay dropAnimation={null}>
+        {draggedTeam !== null && (
+          <div className="flex items-center gap-3 rounded-lg border border-primary bg-card p-3 text-sm shadow-xl ring-2 ring-primary/30">
+            <TeamAvatar teamNumber={draggedTeam} />
+            <div>
+            <p className="font-semibold">{draggedTeam}</p>
+            <p className="text-muted-foreground">{boardItems.find(item => item.teamNumber === draggedTeam)?.nickname}</p>
+            </div>
+          </div>
+        )}
+      </DragOverlay>
+      <TeamDetailDialog eventId={eventId} teamNumber={selectedTeam} onOpenChange={(open) => { if (!open) setSelectedTeam(null) }} />
     </DndContext>
   )
 }
 
 function PickColumn({
+  onSelect,
+  onPicked,
+  savingTeam,
   tier,
   items,
   readOnly,
   searchQuery,
   firstSearchMatch,
 }: {
+  onSelect: (teamNumber: number) => void
+  onPicked: (teamNumber: number, picked: boolean) => void
+  savingTeam: number | null
   tier: Tier
   readOnly: boolean
   searchQuery: string
   firstSearchMatch: number | null
   items: (BoardItem & {
+    mashElo?: number
+    avatar?: string
+    eventTeamAlias?: string
+    colors?: TeamColors
     nickname: string
+    eventRank?: number
+    higherRankedThanOwnTeam?: boolean
+    ownTeamNumber?: number
+    epa?: number
+    averageRp?: number
+    xp?: number
+    picked: boolean
     pitScouted: boolean
     averageDriverRating: number
     averageTeleopFuel: number
@@ -444,6 +554,9 @@ function PickColumn({
               isSearchMatch={teamMatchesSearch(item, searchQuery)}
               shouldScrollIntoView={item.teamNumber === firstSearchMatch}
               searchQuery={searchQuery}
+              onSelect={() => onSelect(item.teamNumber)}
+              onPicked={() => onPicked(item.teamNumber, !item.picked)}
+              savingPicked={savingTeam !== null}
             />
           ))}
         </div>
@@ -453,6 +566,9 @@ function PickColumn({
 }
 
 function PickCard({
+  onSelect,
+  onPicked,
+  savingPicked,
   item,
   readOnly,
   isSearchActive,
@@ -460,8 +576,22 @@ function PickCard({
   shouldScrollIntoView,
   searchQuery,
 }: {
+  onSelect: () => void
+  onPicked: () => void
+  savingPicked: boolean
   item: BoardItem & {
+    mashElo?: number
+    avatar?: string
+    eventTeamAlias?: string
+    colors?: TeamColors
     nickname: string
+    eventRank?: number
+    higherRankedThanOwnTeam?: boolean
+    ownTeamNumber?: number
+    epa?: number
+    averageRp?: number
+    xp?: number
+    picked: boolean
     pitScouted: boolean
     averageDriverRating: number
     averageTeleopFuel: number
@@ -474,6 +604,7 @@ function PickCard({
   searchQuery: string
 }) {
   const cardRef = useRef<HTMLDivElement | null>(null)
+  const me = useQuery(api.members.me)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: `team:${item.teamNumber}`,
     disabled: readOnly,
@@ -496,8 +627,8 @@ function PickCard({
         cardRef.current = node
         setNodeRef(node)
       }}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`grid gap-2 rounded-lg border bg-background p-3 text-sm shadow-sm transition-colors ${
+      style={{ transform: isDragging ? undefined : CSS.Transform.toString(transform), transition }}
+      className={`relative grid gap-2 rounded-lg border bg-background p-3 pt-5 text-sm shadow-sm transition-colors ${
         isDragging ? "opacity-60 ring-2 ring-primary" : ""
       } ${
         isSearchActive && isSearchMatch
@@ -507,11 +638,20 @@ function PickCard({
         isSearchActive && !isSearchMatch ? "opacity-45" : ""
       }`}
     >
+      {item.colors && <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 flex h-1.5 overflow-hidden rounded-t-lg">
+        <span className="w-2/3" style={{ backgroundColor: item.colors.primary }} />
+        <span className="w-1/3" style={{ backgroundColor: item.colors.secondary }} />
+      </span>}
       <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="font-semibold">{item.teamNumber}</p>
+        <button type="button" onClick={onSelect} className={`min-w-0 flex-1 rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${item.picked ? "line-through text-muted-foreground" : ""}`} aria-label={`View team ${item.teamNumber} details`}>
+          <div className="flex items-center gap-2">
+          <TeamAvatar teamNumber={item.teamNumber} />
+          <div className="min-w-0 break-words">
+          <p className="font-semibold">{item.eventTeamAlias ?? item.teamNumber}</p>
           <p className="text-muted-foreground">{item.nickname}</p>
-        </div>
+          </div>
+          </div>
+        </button>
         <button
           type="button"
           className="touch-none rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
@@ -523,6 +663,26 @@ function PickCard({
           <span className="sr-only">Drag team {item.teamNumber}</span>
         </button>
       </div>
+      <dl className="grid grid-cols-3 gap-1 rounded-md bg-muted/50 p-2">
+        {[
+          { label: "EPA", value: item.epa },
+          { label: "RP", value: item.averageRp },
+          { label: "xP", value: item.xp },
+        ].map(({ label, value }) => (
+          <div key={label} className="min-w-0 text-center">
+            <dt className="text-[10px] font-medium text-muted-foreground">{label}</dt>
+            <dd className="text-sm font-semibold tabular-nums">
+              {value === undefined ? "—" : value.toFixed(label === "RP" ? 2 : 1)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {item.eventRank !== undefined && <p className="text-xs text-muted-foreground">Event rank #{item.eventRank}</p>}
+      <p className="text-xs text-muted-foreground">Shared Mash Elo: <span className="font-semibold tabular-nums text-foreground">{item.mashElo === undefined ? "Unranked" : Math.round(item.mashElo)}</span></p>
+      {item.higherRankedThanOwnTeam && <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-700 dark:text-amber-300">Ranked above your team ({item.ownTeamNumber}) · still available to rank</p>}
+      {me?.role === "admin" ? <Button type="button" variant={item.picked ? "secondary" : "outline"} size="sm" onClick={onPicked} disabled={savingPicked} aria-pressed={item.picked} aria-label={`${item.picked ? "Undo picked for" : "Mark picked"} team ${item.teamNumber}`}>
+        {item.picked ? "Picked · Undo" : "Mark picked"}
+      </Button> : item.picked ? <p className="text-xs text-muted-foreground">Picked · unavailable</p> : null}
       <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
         <span>{item.pitScouted ? "Pit done" : "No pit"}</span>
         <span>Driver {item.averageDriverRating}</span>
@@ -534,12 +694,13 @@ function PickCard({
 }
 
 function teamMatchesSearch(
-  item: { teamNumber: number; nickname: string },
+  item: { teamNumber: number; nickname: string; eventTeamAlias?: string },
   searchQuery: string,
 ) {
   if (!searchQuery) return false
   return (
     String(item.teamNumber).includes(searchQuery) ||
+    !!item.eventTeamAlias?.toLowerCase().includes(searchQuery) ||
     item.nickname.toLowerCase().includes(searchQuery)
   )
 }

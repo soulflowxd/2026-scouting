@@ -21,10 +21,15 @@ export const climbLevelValidator = v.union(
 )
 
 export const pitReportInputValidator = {
+  photoIds: v.optional(v.array(v.id("_storage"))),
   eventId: v.id("events"),
   teamNumber: v.number(),
   canScoreFuelHub: v.boolean(),
   canIntakeDepot: v.boolean(),
+  canIntakeOutpost: v.optional(v.boolean()),
+  electricalQuality: v.optional(v.number()),
+  buildQuality: v.optional(v.number()),
+  programmingLanguage: v.optional(v.string()),
   canIntakeFloor: v.boolean(),
   canPreload: v.boolean(),
   preloadCount: v.number(),

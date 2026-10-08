@@ -1,6 +1,20 @@
 import { v } from "convex/values"
 import { internalMutation, internalQuery } from "./_generated/server"
 import { match13RatingValidator } from "./lib/match13"
+import { requireApprovedUserFromDb } from "./lib/authz"
+
+export const photoContext = internalQuery({
+  args: { eventId: v.id("events"), teamNumber: v.number() },
+  handler: async (ctx, args) => {
+    await requireApprovedUserFromDb(ctx)
+    const event = await ctx.db.get(args.eventId)
+    const team = await ctx.db.query("teams").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId).eq("teamNumber", args.teamNumber)).unique()
+    if (!event || !team) throw new Error("Team not found in event")
+    const year = Number(event.eventKey.slice(0, 4))
+    if (!Number.isInteger(year) || year < 2000 || year > 2099) throw new Error("Invalid event year")
+    return { year, teamKey: team.tbaTeamKey }
+  },
+})
 
 function omitUndefined<T extends Record<string, unknown>>(input: T) {
   return Object.fromEntries(
@@ -20,10 +34,37 @@ export const getEventForRefresh = internalQuery({
     return {
       eventKey: event.eventKey,
       teams: teams.map((team) => ({
+        nickname: team.nickname,
+        eventTeamAlias: team.eventTeamAlias,
         teamNumber: team.teamNumber,
         tbaTeamKey: team.tbaTeamKey,
       })),
     }
+  },
+})
+
+export const applyTeamAliases = internalMutation({
+  args: { eventId: v.id("events"), remapping: v.record(v.string(), v.string()) },
+  handler: async (ctx, args) => {
+    const teams = await ctx.db.query("teams").withIndex("by_eventId", q => q.eq("eventId", args.eventId)).take(500)
+    for (const team of teams) {
+      const mapped = args.remapping[team.tbaTeamKey]
+      const eventTeamAlias = mapped && /^frc\d+[A-Za-z]+$/.test(mapped) ? mapped.slice(3) : undefined
+      if (team.eventTeamAlias !== eventTeamAlias) await ctx.db.patch(team._id, { eventTeamAlias })
+    }
+    return null
+  },
+})
+
+export const applyAvatars = internalMutation({
+  args: { eventId: v.id("events"), avatars: v.array(v.object({ teamNumber: v.number(), avatar: v.optional(v.string()) })) },
+  handler: async (ctx, args) => {
+    if (args.avatars.length > 500) throw new Error("Too many avatars")
+    for (const avatar of args.avatars) {
+      const team = await ctx.db.query("teams").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId).eq("teamNumber", avatar.teamNumber)).unique()
+      if (team) await ctx.db.patch(team._id, { avatar: avatar.avatar })
+    }
+    return null
   },
 })
 
@@ -43,6 +84,7 @@ export const beginImport = internalMutation({
       return existing._id
     }
     return await ctx.db.insert("events", {
+      scoutingEnabled: false,
       eventKey: args.eventKey,
       importStatus: "importing",
       importMessage: "Importing event data",
@@ -130,16 +172,19 @@ export const applyStatsRefresh = internalMutation({
   args: {
     eventId: v.id("events"),
     refreshedAt: v.number(),
+    teamYearOnly: v.optional(v.boolean()),
     stats: v.array(
       v.object({
         teamNumber: v.number(),
         opr: v.optional(v.number()),
+        eventOnly: v.optional(v.boolean()),
         dpr: v.optional(v.number()),
         ccwm: v.optional(v.number()),
         wins: v.optional(v.number()),
         losses: v.optional(v.number()),
         ties: v.optional(v.number()),
         averageRp: v.optional(v.number()),
+        eventRank: v.optional(v.number()),
         xp: v.optional(v.number()),
         xpSeason: v.optional(match13RatingValidator),
         xpAll: v.optional(match13RatingValidator),
@@ -173,7 +218,10 @@ export const applyStatsRefresh = internalMutation({
         )
         .unique()
       const doc = { eventId: args.eventId, refreshedAt: args.refreshedAt, ...stat }
-      if (existing) await ctx.db.patch(existing._id, doc)
+      // Replace custom-event snapshots so unavailable season/event fields cannot
+      // survive from an earlier import and masquerade as NTX results.
+      if (existing && (args.teamYearOnly || stat.eventOnly)) await ctx.db.replace(existing._id, doc)
+      else if (existing) await ctx.db.patch(existing._id, doc)
       else await ctx.db.insert("externalStats", doc)
     }
 

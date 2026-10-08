@@ -6,6 +6,7 @@ import { api } from "../../convex/_generated/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { DeviceNotifications, DeviceNotificationsProvider } from "@/components/device-notifications"
 
 type AuthGateProps = {
   children: ReactNode
@@ -70,16 +71,40 @@ export function AuthGate({ children }: AuthGateProps) {
             </p>
           </div>
           {mode === "signUp" && (
+            <>
             <div className="grid gap-2">
-              <Label htmlFor="name">Name</Label>
+              <Label htmlFor="firstName">First name</Label>
               <Input
-                id="name"
-                name="name"
+                id="firstName"
+                name="firstName"
                 type="text"
-                autoComplete="name"
+                autoComplete="given-name"
+                maxLength={49}
+                pattern=".*\S.*"
                 required
               />
             </div>
+            <div className="grid gap-2">
+              <Label htmlFor="lastName">Last name</Label>
+              <Input
+                id="lastName"
+                name="lastName"
+                type="text"
+                autoComplete="family-name"
+                maxLength={50}
+                pattern=".*\S.*"
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="signupTeam">Your team number</Label>
+              <select id="signupTeam" name="teamNumber" required defaultValue="" className="h-9 rounded-md border bg-background px-3 text-sm">
+                <option value="" disabled>Choose your team</option>
+                <option value="9128">9128 · ITKAN Robotics</option>
+                <option value="10340">10340 · ITKAN Girls</option>
+              </select>
+            </div>
+            </>
           )}
           <div className="grid gap-2">
             <Label htmlFor="email">Email</Label>
@@ -145,12 +170,14 @@ export function AuthGate({ children }: AuthGateProps) {
 
   if (me.approvalStatus === "pending") {
     return (
+      <DeviceNotificationsProvider>
       <AccountStatusCard
         icon={<Clock3 className="size-6" aria-hidden="true" />}
         title="Waiting for admin approval"
         description="Your account was created successfully. An admin needs to approve it before you can use scouting."
         onSignOut={() => void signOut()}
-      />
+      ><DeviceNotifications /></AccountStatusCard>
+      </DeviceNotificationsProvider>
     )
   }
 
@@ -173,11 +200,13 @@ function AccountStatusCard({
   title,
   description,
   onSignOut,
+  children,
 }: {
   icon: ReactNode
   title: string
   description: string
   onSignOut: () => void
+  children?: ReactNode
 }) {
   return (
     <div className="grid min-h-svh place-items-center bg-background p-4 text-foreground">
@@ -194,6 +223,7 @@ function AccountStatusCard({
         <Button type="button" variant="outline" onClick={onSignOut}>
           Sign out
         </Button>
+        {children}
       </div>
     </div>
   )

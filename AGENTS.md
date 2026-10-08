@@ -36,17 +36,77 @@ redirects here; keep project guidance here rather than duplicating it.
 - Use Convex Auth credential helpers for password changes; never store plaintext
   passwords. Require the actor's current password and revoke other sessions.
 - Name editing uses first-name and last-name inputs with a combined display name.
+- Signup requires separate first and last names. Trim both and reject missing
+  or whitespace-only values on the backend as well as in the form. Existing
+  accounts must still be able to sign in without re-entering their names.
+- Notify approved admins and the super admin of pending account approvals.
+  Keep pending requests visible in the notification bell until resolved, link
+  them to the admin page, and do not notify scouts about other users' requests.
+- Notify scouts when their account transitions to approved, with a dismissible
+  in-app confirmation and Web Push when enabled. Repeated approval clicks or
+  sign-ins must not schedule duplicate notifications.
+- Pending scouts may register their own device notifications from the waiting
+  screen. This must not grant scouting access; rejected and archived accounts
+  must remain blocked. Recheck recipient eligibility before push delivery.
 
 ## Scouting Behavior
 
 - Keep external statistics tied to the selected event and current year. Never
   substitute another year's EPA when current-year data is unavailable.
 - Preserve independent in-season and offseason/all xP scopes.
+- Resolve TBA event `remap_teams` aliases for offseason demo teams when importing
+  rankings, RP, OPR, DPR, CCWM, and match rosters. Preserve the demo team's
+  numeric identity; never borrow a parent team's statistics for its B squad.
+- Use letter-suffixed event aliases (such as 1745S and 10014R) as the primary
+  visible team identifiers. Never show event-local placeholder numbers in their
+  place. Preserve internal numeric keys so reports and rankings remain linked,
+  and support searching by either identifier.
+- Offseason demo teams (99xx numbers) and letter-suffixed second robots may
+  display EPA/xP only from the selected event. Do not use season, prior-event,
+  or parent-team fallbacks. Hide unverified cached stats until refreshed.
+- Custom event rosters must keep letter-suffixed squads separate from their
+  parent teams. `scripts/load-ntx.mjs` loads the supplied NTX roster into an
+  explicitly named deployment. Do not invent schedules or external statistics
+  for manually supplied rosters.
+- NTX is not on TBA. Skip TBA event lookups for NTX; available current-year
+  EPA/xP for regular teams must be labeled as team stats, not NTX results.
+  Leave unavailable event RP and standings blank. NTX roster updates are
+  additive and idempotent; preserve existing teams and scouting data.
+- Rebellious 9994 is the same NTX robot as 10014R, not an additional team.
+  Keep the duplicate archived and recoverable rather than deleting reports.
+- Admins control scouting submissions per event in Event setup. Enforce closed
+  events on the backend for pit saves, match claims/reports, and breakdown
+  follow-ups, including admin submissions. New events start closed; legacy
+  events without the setting remain open. Viewing data and rankings stays open.
+- Breakdown alerts remain unresolved until a required follow-up form is saved.
+  Keep device notifications and in-app scout alerts consistent.
+- Team logos must come from TBA, not local logo overrides. The supplied ITKAN
+  image is the app favicon. Team-color accents come from FRC Colors; preserve
+  readable card text and neutral fallbacks when branding is unavailable.
 - Pit reports require at least one robot photo, with up to six photos, each no
   larger than 10 MB. Validate uploaded storage metadata on the backend.
 - Support phone-camera capture and multiple-file uploads. Preserve existing
   reports without photos, but require a photo when submitting updates.
 - Keep strategy-board robot markers square and paths colored by driver station.
+
+## Rank Teams And Navigation
+
+- Rank Teams uses a shared, event-scoped Elo leaderboard from approved scouts'
+  votes in Convex. Pick-list cards show the same shared Elo. Do not revert to
+  device-only rankings or automatically import old local votes. Scouts may
+  undo only their own votes; enforce this on the backend.
+- Randomize matchups, favor less-compared teams, and avoid repeated pairs when
+  possible. Skip teams without stats or scouting reports until evidence exists.
+- Percentage filtering by EPA or shared Elo keeps at least 10 scored teams for
+  every event, or all scored teams if fewer exist. Include cutoff ties; do not
+  invent scores to meet the minimum. All teams includes unranked eligible teams.
+- Keep comparison cards compact: Pick controls above photos, bounded photo
+  previews, compact stats, and access to full-size images and photo thumbnails.
+- Keep the header uncluttered: short event name, single-line primary navigation,
+  visible scout alerts, and account/admin/theme/sign-out in the profile menu.
+  Keep detailed stats provenance on relevant pages, not in the header subtitle.
+- Unknown routes use the custom 404 page within the app shell, with links back
+  to scouting and a safe fallback when there is no prior in-app history.
 
 ## Deployment And Secrets
 

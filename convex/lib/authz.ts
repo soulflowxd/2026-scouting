@@ -1,6 +1,6 @@
 import type { UserIdentity } from "convex/server"
 import { getAuthUserId } from "@convex-dev/auth/server"
-import type { Id } from "../_generated/dataModel"
+import type { Doc, Id } from "../_generated/dataModel"
 import type { MutationCtx, QueryCtx } from "../_generated/server"
 import { readEnv } from "./env"
 
@@ -84,12 +84,7 @@ export async function requireUserFromDb(ctx: QueryCtx | MutationCtx) {
   const email =
     typeof authUser?.email === "string" ? authUser.email : user.email
   const name = typeof authUser?.name === "string" ? authUser.name : user.name
-  const member = await ctx.db
-    .query("members")
-    .withIndex("by_tokenIdentifier", (q) =>
-      q.eq("tokenIdentifier", user.tokenIdentifier),
-    )
-    .unique()
+  const member = await findMember(ctx)
   const bootstrapRole = roleForIdentity({
     tokenIdentifier: user.tokenIdentifier,
     email: email ?? undefined,
@@ -99,7 +94,9 @@ export async function requireUserFromDb(ctx: QueryCtx | MutationCtx) {
       ? "superAdmin"
       : member?.role ?? bootstrapRole
   const approvalStatus =
-    role === "superAdmin" || role === "admin"
+    !member && (await memberCandidates(ctx)).some(row => row.mergedInto)
+      ? "rejected"
+      : role === "superAdmin" || role === "admin"
       ? member?.approvalStatus === "rejected"
         ? "rejected"
         : "approved"
@@ -107,8 +104,12 @@ export async function requireUserFromDb(ctx: QueryCtx | MutationCtx) {
 
   return {
     ...user,
+    tokenIdentifier: member?.tokenIdentifier ?? user.tokenIdentifier,
+    authUserId: authUser?._id ?? null,
+    teamNumber: member?.teamNumber ?? authUser?.teamNumber,
+    memberId: member?._id ?? null,
     email,
-    name,
+    name: member?.name || name,
     role,
     approvalStatus,
   }
@@ -146,12 +147,26 @@ export async function requireSuperAdminFromDb(ctx: QueryCtx | MutationCtx) {
 
 export async function getCurrentMember(ctx: QueryCtx | MutationCtx) {
   const user = await requireUserFromDb(ctx)
-  const member = await ctx.db
-    .query("members")
-    .withIndex("by_tokenIdentifier", (q) =>
-      q.eq("tokenIdentifier", user.tokenIdentifier),
-    )
-    .unique()
+  const member = user.memberId ? await ctx.db.get(user.memberId) : null
 
   return { user, member }
+}
+
+// Convex Auth subjects contain userId|sessionId; member ownership must not vary by session.
+export async function memberCandidates(ctx: QueryCtx | MutationCtx): Promise<Doc<"members">[]> {
+  const identity = await ctx.auth.getUserIdentity()
+  if (!identity) return []
+  const userId = await getAuthUserId(ctx)
+  let authUser = null
+  try { if (userId) authUser = await ctx.db.get(userId as Id<"users">) } catch { /* Non-Convex test identities. */ }
+  if (!authUser) return await ctx.db.query("members").withIndex("by_tokenIdentifier", q => q.eq("tokenIdentifier", identity.tokenIdentifier)).take(100)
+  const linked = await ctx.db.query("members").withIndex("by_authUserId", q => q.eq("authUserId", authUser._id)).take(100)
+  const prefix = identity.tokenIdentifier.slice(0, -identity.subject.length) + authUser._id + "|"
+  const legacy = await ctx.db.query("members").withIndex("by_tokenIdentifier", q => q.gte("tokenIdentifier", prefix).lt("tokenIdentifier", prefix + "\uffff")).take(100)
+  const exact = await ctx.db.query("members").withIndex("by_tokenIdentifier", q => q.eq("tokenIdentifier", identity.tokenIdentifier)).take(1)
+  return [...new Map([...linked, ...legacy, ...exact].map(row => [row._id, row])).values()]
+}
+
+export async function findMember(ctx: QueryCtx | MutationCtx) {
+  return (await memberCandidates(ctx)).filter(row => !row.mergedInto).sort((a, b) => Number(b.role === "superAdmin") - Number(a.role === "superAdmin") || a._creationTime - b._creationTime)[0] ?? null
 }

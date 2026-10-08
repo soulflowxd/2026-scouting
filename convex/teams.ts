@@ -1,5 +1,21 @@
-import { v } from "convex/values"
-import { query } from "./_generated/server"
+import { ConvexError, v } from "convex/values"
+import { mutation, query } from "./_generated/server"
+import { requireAdminFromDb } from "./lib/authz"
+import { needsEventStats } from "./lib/demoTeams"
+
+export const setPicked = mutation({
+  args: { eventId: v.id("events"), teamNumber: v.number(), picked: v.boolean() },
+  handler: async (ctx, args) => {
+    const user = await requireAdminFromDb(ctx)
+    const team = await ctx.db.query("teams").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId).eq("teamNumber", args.teamNumber)).unique()
+    if (!team) throw new ConvexError("Team not found in this event")
+    const existing = await ctx.db.query("pickedTeams").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId).eq("teamNumber", args.teamNumber)).unique()
+    const doc = { ...args, updatedByToken: user.tokenIdentifier, updatedAt: Date.now() }
+    if (existing) await ctx.db.patch(existing._id, doc)
+    else await ctx.db.insert("pickedTeams", doc)
+    return null
+  },
+})
 
 function climbScore(level: string) {
   if (level === "level3") return 3
@@ -21,6 +37,8 @@ export const list = query({
     xpScope: v.optional(v.union(v.literal("season"), v.literal("all"))),
   },
   handler: async (ctx, args) => {
+    const selections = await ctx.db.query("pickedTeams")
+      .withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId)).take(500)
     const teams = await ctx.db
       .query("teams")
       .withIndex("by_eventId", (q) => q.eq("eventId", args.eventId))
@@ -42,7 +60,7 @@ export const list = query({
       .withIndex("by_eventId_and_teamNumber", (q) => q.eq("eventId", args.eventId))
       .take(500)
 
-    return teams
+    return teams.filter(team => team.mergedIntoTeamNumber === undefined)
       .sort((a, b) => a.teamNumber - b.teamNumber)
       .map((team) => {
         const teamReports = reports.filter(
@@ -63,12 +81,15 @@ export const list = query({
         const pickTier =
           pickItems.find((item) => item.teamNumber === team.teamNumber)?.tier ??
           "uncategorized"
-        const stats = externalStats.find(
+        const importedStats = externalStats.find(
           (item) => item.teamNumber === team.teamNumber,
         )
+        const eventOnly = needsEventStats(team)
+        const stats = eventOnly && !importedStats?.eventOnly ? undefined : importedStats
 
         return {
           ...team,
+          picked: selections.find(item => item.teamNumber === team.teamNumber)?.picked ?? false,
           pitScouted: pits.some((pit) => pit.teamNumber === team.teamNumber),
           matchReportCount: teamReports.length,
           averageDriverRating: Number(driverAverage.toFixed(1)),
@@ -76,10 +97,11 @@ export const list = query({
           commonEndgameClimb: bestEndgame,
           pickTier,
           epa: stats?.epa,
-          xp: args.xpScope
+          xp: args.xpScope && !eventOnly
             ? (args.xpScope === "season" ? stats?.xpSeason?.xp : stats?.xpAll?.xp)
             : stats?.xp,
           averageRp: stats?.averageRp,
+          eventRank: stats?.eventRank,
         }
       })
   },
@@ -100,6 +122,11 @@ export const detail = query({
       .unique()
     if (!team) return null
 
+    const selection = await ctx.db.query("pickedTeams")
+      .withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId).eq("teamNumber", args.teamNumber)).unique()
+    const breakdownFollowUps = await ctx.db.query("breakdownFollowUps")
+      .withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId).eq("teamNumber", args.teamNumber)).take(200)
+
     const pitReports = await ctx.db
       .query("pitReports")
       .withIndex("by_eventId_and_teamNumber", (q) =>
@@ -112,12 +139,15 @@ export const detail = query({
         q.eq("eventId", args.eventId).eq("teamNumber", args.teamNumber),
       )
       .take(200)
-    const stats = await ctx.db
+    const importedStats = await ctx.db
       .query("externalStats")
       .withIndex("by_eventId_and_teamNumber", (q) =>
         q.eq("eventId", args.eventId).eq("teamNumber", args.teamNumber),
       )
       .unique()
+
+    const eventOnly = needsEventStats(team)
+    const stats = eventOnly && !importedStats?.eventOnly ? null : importedStats
 
     const count = Math.max(matchReports.length, 1)
     const autoHubWins = matchReports.filter(
@@ -164,9 +194,11 @@ export const detail = query({
 
     return {
       team,
+      picked: selection?.picked ?? false,
+      breakdownFollowUps,
       pitReports,
       matchReports,
-      stats: stats && args.xpScope ? {
+      stats: stats && args.xpScope && !eventOnly ? {
         ...stats,
         ...{
           xp: undefined, match13Epa: undefined, autoXp: undefined,

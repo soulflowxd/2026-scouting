@@ -1,6 +1,25 @@
 import { mutation, query } from "./_generated/server"
 import { requireApprovedUserFromDb } from "./lib/authz"
+import { requireScoutingOpen } from "./lib/scoutingAccess"
 import { pitReportInputValidator } from "./validators"
+import { ConvexError, v } from "convex/values"
+
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: async ctx => {
+    await requireApprovedUserFromDb(ctx)
+    return await ctx.storage.generateUploadUrl()
+  },
+})
+
+export const photoUrls = query({
+  args: { photoIds: v.array(v.id("_storage")) },
+  handler: async (ctx, args) => {
+    await requireApprovedUserFromDb(ctx)
+    if (args.photoIds.length > 6) throw new ConvexError("Maximum 6 robot photos")
+    return await Promise.all(args.photoIds.map(async id => ({ id, url: await ctx.storage.getUrl(id) })))
+  },
+})
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.trunc(value)))
@@ -25,6 +44,19 @@ export const save = mutation({
   args: pitReportInputValidator,
   handler: async (ctx, args) => {
     const user = await requireApprovedUserFromDb(ctx)
+    await requireScoutingOpen(ctx, args.eventId)
+    for (const value of [args.electricalQuality, args.buildQuality]) {
+      if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > 10)) throw new ConvexError("Quality ratings must be whole numbers from 1 to 10")
+    }
+    if (args.programmingLanguage !== undefined && (!args.programmingLanguage.trim() || args.programmingLanguage.length > 100)) throw new ConvexError("Enter a programming language (or Unknown), up to 100 characters")
+    if (!args.photoIds?.length) throw new ConvexError("Upload at least one robot photo before submitting")
+    if (args.photoIds.length > 6) throw new ConvexError("Maximum 6 robot photos")
+    for (const id of args.photoIds) {
+      const photo = await ctx.db.system.get(id)
+      if (!photo || !["image/jpeg", "image/png", "image/webp", "image/gif"].includes(photo.contentType ?? "") || photo.size > 10 * 1024 * 1024) {
+        throw new ConvexError("Robot photos must be JPG, PNG, WebP or GIF images under 10 MB")
+      }
+    }
     for (const value of [args.fuelCapacity, args.intakeBps, args.framePerimeter, args.frameLength, args.frameWidth, args.weight, args.overallLength, args.overallWidth]) {
       if (value !== undefined && (!Number.isFinite(value) || value < 0)) throw new Error("Robot measurements must be non-negative numbers")
     }
@@ -50,6 +82,7 @@ export const save = mutation({
     )
     const doc = {
       ...args,
+      programmingLanguage: args.programmingLanguage?.trim(),
       swerveType: args.drivetrain.toLowerCase().includes("swerve") ? args.swerveType : "",
       tread: args.drivetrain.toLowerCase().includes("swerve") ? args.tread : "",
       preloadCount,

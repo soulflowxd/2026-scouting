@@ -6,6 +6,9 @@ import { action, internalAction } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
 import { readEnv } from "./lib/env"
 import { match13Stats, scopedMatch13Stats, type Match13Team } from "./lib/match13"
+import { tbaAvatars } from "./lib/tbaAvatars"
+import { eventTeamKeys, eventTeamNumber, eventTeamValue } from "./lib/tbaTeamKeys"
+import { needsEventStats } from "./lib/demoTeams"
 
 type TbaTeam = {
   key: string
@@ -16,8 +19,30 @@ type TbaTeam = {
   country?: string
 }
 
+export const robotPhotos = action({
+  args: { eventId: v.id("events"), teamNumber: v.number() },
+  handler: async (ctx, args): Promise<{ photos: { id: string; url: string }[] }> => {
+    const context = await ctx.runQuery(internal.importData.photoContext, args)
+    const key = readEnv("TBA_API_KEY")
+    if (!key) throw new Error("TBA photos unavailable")
+    const response = await fetch(`https://www.thebluealliance.com/api/v3/team/${encodeURIComponent(context.teamKey)}/media/${context.year}`, { headers: { "X-TBA-Auth-Key": key }, signal: AbortSignal.timeout(10000) })
+    if (!response.ok) throw new Error("TBA photos unavailable")
+    const media: unknown = await response.json()
+    const photos: { id: string; url: string }[] = []
+    if (Array.isArray(media)) for (const item of media) {
+      if (item?.type !== "imgur" || typeof item.direct_url !== "string") continue
+      try {
+        const url = new URL(item.direct_url)
+        if (url.protocol === "https:" && url.hostname === "i.imgur.com" && !url.username && !url.password && !url.port) photos.push({ id: `tba:${item.foreign_key}`, url: url.href })
+      } catch { /* Ignore malformed media URLs. */ }
+    }
+    return { photos: photos.slice(0, 20) }
+  },
+})
+
 type TbaEvent = {
   name?: string
+  remap_teams?: Record<string, string> | null
 }
 
 type TbaMatch = {
@@ -36,6 +61,7 @@ type TbaMatch = {
 type TbaStatus = {
   qual?: {
     ranking?: {
+      rank?: number
       record?: { wins?: number; losses?: number; ties?: number }
       sort_orders?: number[]
     }
@@ -92,10 +118,6 @@ async function fetchText(url: string) {
   const response = await fetch(url)
   if (!response.ok) throw new Error(`${url} failed: ${response.status}`)
   return await response.text()
-}
-
-function teamNumberFromKey(teamKey: string) {
-  return Number(teamKey.replace(/^frc/, ""))
 }
 
 function finiteNumber(value: unknown) {
@@ -293,8 +315,8 @@ export const importEvent = action({
           omitUndefined({
             tbaMatchKey: match.key,
             matchNumber: match.match_number,
-            redTeams: match.alliances.red.team_keys.map(teamNumberFromKey),
-            blueTeams: match.alliances.blue.team_keys.map(teamNumberFromKey),
+            redTeams: match.alliances.red.team_keys.map(key => eventTeamNumber(key, event.remap_teams)),
+            blueTeams: match.alliances.blue.team_keys.map(key => eventTeamNumber(key, event.remap_teams)),
             scheduledTime:
               match.actual_time ?? match.predicted_time ?? match.time,
           }),
@@ -348,14 +370,24 @@ export const refreshStatsInternal = internalAction({
   ): Promise<{ statsCount: number; predictionCount: number }> => {
     const eventData: {
       eventKey: string
-      teams: { teamNumber: number; tbaTeamKey: string }[]
+      teams: { teamNumber: number; tbaTeamKey: string; nickname?: string; eventTeamAlias?: string }[]
     } | null = await ctx.runQuery(internal.importData.getEventForRefresh, args)
     if (!eventData) throw new Error("Event not found")
+    await ctx.scheduler.runAfter(0, internal.imports.refreshAvatarsInternal, args)
 
     const tbaKey = readEnv("TBA_API_KEY")
-    if (!tbaKey) throw new Error("Missing TBA_API_KEY")
-    const tbaHeaders = { "X-TBA-Auth-Key": tbaKey }
     const eventKey = eventData.eventKey
+    // NTX is a manually maintained event, not a TBA event.
+    const teamYearOnly = /^\d{4}ntx$/.test(eventKey)
+    if (!tbaKey && !teamYearOnly) throw new Error("Missing TBA_API_KEY")
+    const tbaHeaders = { "X-TBA-Auth-Key": tbaKey }
+    const event: TbaEvent = teamYearOnly ? {} : await fetchJson<TbaEvent>(
+      `https://www.thebluealliance.com/api/v3/event/${eventKey}`, tbaHeaders,
+    )
+    if (!teamYearOnly) await ctx.runMutation(internal.importData.applyTeamAliases, {
+      eventId: args.eventId, remapping: event.remap_teams ?? {},
+    })
+    const eventOnlyTeams = new Set(eventData.teams.filter(team => needsEventStats(team) || eventTeamKeys(team.tbaTeamKey, event.remap_teams).some(key => /^frc\d+[a-z]$/i.test(key))).map(team => team.teamNumber))
 
     let oprs: {
       oprs?: Record<string, number>
@@ -363,6 +395,7 @@ export const refreshStatsInternal = internalAction({
       ccwms?: Record<string, number>
     } = {}
     try {
+      if (teamYearOnly) throw new Error("No event OPRs")
       oprs = await fetchJson<{
         oprs?: Record<string, number>
         dprs?: Record<string, number>
@@ -374,6 +407,7 @@ export const refreshStatsInternal = internalAction({
 
     let rankings: NonNullable<TbaRankings["rankings"]> = []
     try {
+      if (teamYearOnly) throw new Error("No event rankings")
       const rankingData = await fetchJson<TbaRankings>(
         `https://www.thebluealliance.com/api/v3/event/${eventKey}/rankings`,
         tbaHeaders,
@@ -385,9 +419,10 @@ export const refreshStatsInternal = internalAction({
 
     const statuses = await Promise.all(
       eventData.teams.map(async (team) => {
+        if (teamYearOnly) return { teamNumber: team.teamNumber, status: null }
         try {
           const status = await fetchJson<TbaStatus>(
-            `https://www.thebluealliance.com/api/v3/team/${team.tbaTeamKey}/event/${eventKey}/status`,
+            `https://www.thebluealliance.com/api/v3/team/${eventTeamKeys(team.tbaTeamKey, event.remap_teams)[0]}/event/${eventKey}/status`,
             tbaHeaders,
           )
           return { teamNumber: team.teamNumber, status }
@@ -400,9 +435,11 @@ export const refreshStatsInternal = internalAction({
     const statboticsHeaders: Record<string, string> = {}
 
     const statboticsYear = eventYear(eventKey)
-    const teamNumbers = new Set(eventData.teams.map((team) => team.teamNumber))
+    const eligibleTeams = eventData.teams.filter(team => !teamYearOnly || (team.tbaTeamKey === `frc${team.teamNumber}` && !eventOnlyTeams.has(team.teamNumber)))
+    const teamNumbers = new Set(eligibleTeams.map((team) => team.teamNumber))
     let statboticsTeamRows: StatboticsTeamEvent[] = []
     try {
+      if (teamYearOnly) throw new Error("Use current-year team stats")
       statboticsTeamRows = await fetchJson<StatboticsTeamEvent[]>(
         `https://api.statbotics.io/v3/team_events?event=${encodeURIComponent(eventKey)}&limit=1000`,
         statboticsHeaders,
@@ -419,7 +456,7 @@ export const refreshStatsInternal = internalAction({
         statboticsTeamRows = []
       }
     }
-    if (statboticsTeamRows.length === 0) {
+    if (statboticsTeamRows.length === 0 && !teamYearOnly) {
       statboticsTeamRows = await fetchStatboticsCsvRows(
         eventKey,
         statboticsYear,
@@ -428,18 +465,21 @@ export const refreshStatsInternal = internalAction({
     }
     const epaRows = await Promise.all(
       eventData.teams.map(async (team) => {
+        if (!teamNumbers.has(team.teamNumber)) return { teamNumber: team.teamNumber, row: null }
         const batchRow =
           statboticsTeamRows.find(
-            (row) => Number(row.team) === team.teamNumber,
+            (row) => Number(row.team) === team.teamNumber && (!teamYearOnly || Number(row.year) === statboticsYear) && (!eventOnlyTeams.has(team.teamNumber) || (row.event === eventKey && Number(row.year) === statboticsYear)),
           ) ?? null
         if (batchRow) return { teamNumber: team.teamNumber, row: batchRow }
         try {
+          if (teamYearOnly) throw new Error("Use team-year endpoint")
           const row = await fetchJson<StatboticsTeamEvent>(
             `https://api.statbotics.io/v3/team_event/${team.teamNumber}/${eventKey}`,
             statboticsHeaders,
           )
-          return { teamNumber: team.teamNumber, row }
+          return { teamNumber: team.teamNumber, row: eventOnlyTeams.has(team.teamNumber) && (row.event !== eventKey || Number(row.year) !== statboticsYear) ? null : row }
         } catch {
+          if (eventOnlyTeams.has(team.teamNumber)) return { teamNumber: team.teamNumber, row: null }
           try {
             const row = statboticsYear
               ? await fetchJson<StatboticsTeamEvent>(
@@ -447,7 +487,7 @@ export const refreshStatsInternal = internalAction({
                   statboticsHeaders,
                 )
               : null
-            return { teamNumber: team.teamNumber, row }
+            return { teamNumber: team.teamNumber, row: teamYearOnly && Number(row?.year) !== statboticsYear ? null : row }
           } catch {
             return { teamNumber: team.teamNumber, row: null }
           }
@@ -461,6 +501,7 @@ export const refreshStatsInternal = internalAction({
       blueWinProb?: number
     }[] = []
     try {
+      if (teamYearOnly) throw new Error("No event predictions")
       const rows = await fetchJson<Record<string, unknown>[]>(
         `https://api.statbotics.io/v3/matches?event=${encodeURIComponent(eventKey)}&limit=1000`,
         statboticsHeaders,
@@ -498,14 +539,14 @@ export const refreshStatsInternal = internalAction({
       all: new Map(),
     }
     if (match13Key) {
-      const response = await fetch(
+      const response = teamYearOnly ? null : await fetch(
         `https://actions.match13.com/v1/events/${encodeURIComponent(eventKey)}/teams`,
         {
           headers: { Authorization: `Bearer ${match13Key}` },
           signal: AbortSignal.timeout(30000),
         },
       )
-      if (response.ok) {
+      if (response?.ok) {
         const data = await response.json() as {
           eventKey: string
           year: number
@@ -515,7 +556,7 @@ export const refreshStatsInternal = internalAction({
           throw new Error("Match13 returned data for a different event or year")
         }
         match13Teams = data.teams
-      } else if (response.status !== 404) {
+      } else if (response && response.status !== 404) {
         throw new Error(`Match13 stats request failed (${response.status})`)
       }
       if (statboticsYear) {
@@ -540,6 +581,7 @@ export const refreshStatsInternal = internalAction({
             }
             for (const row of data.teams) {
               if (row.year === statboticsYear && teamNumbers.has(row.teamNumber)) {
+                if (eventOnlyTeams.has(row.teamNumber)) continue
                 scopedTeams[scope].set(row.teamNumber, row)
               }
             }
@@ -558,30 +600,33 @@ export const refreshStatsInternal = internalAction({
     await ctx.runMutation(internal.importData.applyStatsRefresh, {
       eventId: args.eventId,
       refreshedAt,
+      teamYearOnly,
       stats: eventData.teams.map((team) => {
         const status = statuses.find(
           (item) => item.teamNumber === team.teamNumber,
         )?.status
-        const ranking = rankings.find((item) => item.team_key === team.tbaTeamKey)
+        const teamKeys = eventTeamKeys(team.tbaTeamKey, event.remap_teams)
+        const ranking = teamKeys.map(key => rankings.find(item => item.team_key === key)).find(Boolean)
         const epaRow = epaRows.find((item) => item.teamNumber === team.teamNumber)
           ?.row
         const epa = epaRow?.epa
         const record = ranking?.record ?? status?.qual?.ranking?.record
         const sortOrders =
           ranking?.sort_orders ?? status?.qual?.ranking?.sort_orders ?? []
-        const teamKey = team.tbaTeamKey
         return omitUndefined({
           teamNumber: team.teamNumber,
-          ...match13Stats(match13Teams.find((row) => row.teamNumber === team.teamNumber)),
-          xpSeason: match13Key ? omitUndefined(scopedMatch13Stats(scopedTeams.season.get(team.teamNumber))) : undefined,
-          xpAll: match13Key ? omitUndefined(scopedMatch13Stats(scopedTeams.all.get(team.teamNumber))) : undefined,
-          opr: oprs.oprs?.[teamKey],
-          dpr: oprs.dprs?.[teamKey],
-          ccwm: oprs.ccwms?.[teamKey],
+          eventOnly: eventOnlyTeams.has(team.teamNumber),
+          ...(teamYearOnly ? scopedMatch13Stats(scopedTeams.season.get(team.teamNumber)) : match13Stats(match13Teams.find((row) => row.teamNumber === team.teamNumber))),
+          xpSeason: match13Key && !eventOnlyTeams.has(team.teamNumber) ? omitUndefined(scopedMatch13Stats(scopedTeams.season.get(team.teamNumber))) : undefined,
+          xpAll: match13Key && !eventOnlyTeams.has(team.teamNumber) ? omitUndefined(scopedMatch13Stats(scopedTeams.all.get(team.teamNumber))) : undefined,
+          opr: eventTeamValue(oprs.oprs, teamKeys),
+          dpr: eventTeamValue(oprs.dprs, teamKeys),
+          ccwm: eventTeamValue(oprs.ccwms, teamKeys),
           wins: record?.wins,
+          eventRank: ranking?.rank ?? status?.qual?.ranking?.rank,
           losses: record?.losses,
           ties: record?.ties,
-          averageRp:
+          averageRp: teamYearOnly ? undefined :
             nestedFiniteRecordNumber(epaRow, ["record", "qual", "rps_per_match"]) ??
             firstFiniteRecordNumber(epaRow, ["averageRp", "rps_per_match"]) ??
             (sortOrders.length > 0 ? sortOrders[0] : undefined),
@@ -667,3 +712,21 @@ export const refreshStatsInternal = internalAction({
   },
 })
 
+export const refreshAvatarsInternal = internalAction({
+  args: { eventId: v.id("events") },
+  handler: async (ctx, args) => {
+    const event = await ctx.runQuery(internal.importData.getEventForRefresh, args)
+    if (!event) return null
+    const key = readEnv("TBA_API_KEY")
+    if (!key) return null
+    // Avatar failures must not prevent stats or event imports from succeeding.
+    let media: unknown
+    try {
+      media = await fetchJson<unknown>(`https://www.thebluealliance.com/api/v3/event/${event.eventKey}/team_media`, { "X-TBA-Auth-Key": key })
+    } catch { return null }
+    if (!Array.isArray(media)) return null
+    const avatars = tbaAvatars(media)
+    await ctx.runMutation(internal.importData.applyAvatars, { eventId: args.eventId, avatars: event.teams.map(team => ({ teamNumber: team.teamNumber, avatar: avatars.get(team.tbaTeamKey) })) })
+    return null
+  },
+})

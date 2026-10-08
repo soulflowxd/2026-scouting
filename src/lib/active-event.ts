@@ -7,7 +7,10 @@ const selectedEventKey = "scouting:selectedEventId"
 const selectedEventChanged = "scouting:selected-event-changed"
 
 export function eventLabel(event: Pick<Doc<"events">, "eventKey" | "name">) {
-  return event.name ? `${event.name} (${event.eventKey})` : event.eventKey
+  const label = event.name ? `${event.name} (${event.eventKey})` : event.eventKey
+  return /^\d{4}ntx$/.test(event.eventKey)
+    ? `${label} · EPA/xP: ${event.eventKey.slice(0, 4)} team stats, not NTX results · Event RP unavailable`
+    : label
 }
 
 export function useActiveEvent() {

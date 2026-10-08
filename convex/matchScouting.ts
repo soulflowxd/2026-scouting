@@ -1,5 +1,7 @@
 import { ConvexError, v } from "convex/values"
 import { mutation, query } from "./_generated/server"
+import { requireScoutingOpen } from "./lib/scoutingAccess"
+import { internal } from "./_generated/api"
 import {
   requireAdminFromDb,
   requireApprovedUserFromDb,
@@ -63,6 +65,7 @@ export const claimRobot = mutation({
   args: { eventId: v.id("events"), matchNumber: v.number(), teamNumber: v.number() },
   handler: async (ctx, args) => {
     const user = await requireApprovedUserFromDb(ctx)
+    await requireScoutingOpen(ctx, args.eventId)
     const activeForRobot = await ctx.db
       .query("matchRobotClaims")
       .withIndex("by_eventId_and_matchNumber_and_teamNumber_and_status", (q) =>
@@ -139,6 +142,7 @@ export const saveReport = mutation({
   args: matchReportInputValidator,
   handler: async (ctx, args) => {
     const user = await requireApprovedUserFromDb(ctx)
+    await requireScoutingOpen(ctx, args.eventId)
     const claim = await ctx.db
       .query("matchRobotClaims")
       .withIndex("by_eventId_and_matchNumber_and_teamNumber_and_status", (q) =>
@@ -202,7 +206,7 @@ export const saveReport = mutation({
             .eq("teamNumber", args.teamNumber)
             .eq("scoutToken", user.tokenIdentifier),
       )
-      .unique()
+      .order("desc").first()
 
     let reportId
     if (existing) {
@@ -215,8 +219,8 @@ export const saveReport = mutation({
     if (tags.includes("Broke down")) {
       const members = (await ctx.db.query("members").take(500)).filter(
         (member) =>
-          member.approvalStatus === undefined ||
-          member.approvalStatus === "approved",
+          !member.mergedInto && (member.approvalStatus === undefined ||
+          member.approvalStatus === "approved"),
       )
       const recipientTokens = new Set([
         user.tokenIdentifier,
@@ -236,9 +240,9 @@ export const saveReport = mutation({
                   .eq("matchNumber", args.matchNumber)
                   .eq("teamNumber", args.teamNumber),
             )
-            .unique()
+            .first()
           if (!duplicate) {
-            await ctx.db.insert("scoutNotifications", {
+            const notificationId = await ctx.db.insert("scoutNotifications", {
               recipientToken,
               eventId: args.eventId,
               kind: "robotBreakdown",
@@ -247,6 +251,7 @@ export const saveReport = mutation({
               message: `Team ${args.teamNumber} broke down in QM${args.matchNumber}. Ask the team what failed on the robot.`,
               createdAt,
             })
+            await ctx.scheduler.runAfter(0, internal.push.sendBreakdown, { notificationId })
           }
         }),
       )

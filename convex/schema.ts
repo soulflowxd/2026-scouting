@@ -20,7 +20,14 @@ const climbLevel = v.union(
 
 export default defineSchema({
   ...authTables,
+  users: defineTable({
+    ...authTables.users.validator.fields,
+    teamNumber: v.optional(v.union(v.literal(9128), v.literal(10340))),
+  }).index("email", ["email"]).index("phone", ["phone"]),
   members: defineTable({
+    teamNumber: v.optional(v.union(v.literal(9128), v.literal(10340))),
+    authUserId: v.optional(v.id("users")),
+    mergedInto: v.optional(v.id("members")),
     tokenIdentifier: v.string(),
     email: v.optional(v.string()),
     name: v.optional(v.string()),
@@ -38,12 +45,16 @@ export default defineSchema({
     ),
     requestedAt: v.optional(v.number()),
     approvedAt: v.optional(v.number()),
+    approvalNoticePending: v.optional(v.boolean()),
     approvedByToken: v.optional(v.string()),
     lastSeenAt: v.number(),
   })
     .index("by_tokenIdentifier", ["tokenIdentifier"])
-    .index("by_role", ["role"]),
+    .index("by_authUserId", ["authUserId"])
+    .index("by_role", ["role"])
+    .index("by_approvalStatus", ["approvalStatus"]),
   events: defineTable({
+    scoutingEnabled: v.optional(v.boolean()),
     eventKey: v.string(),
     name: v.optional(v.string()),
     importStatus: v.union(
@@ -60,7 +71,17 @@ export default defineSchema({
   })
     .index("by_eventKey", ["eventKey"])
     .index("by_activeAt", ["activeAt"]),
+  pickedTeams: defineTable({
+    eventId: v.id("events"),
+    teamNumber: v.number(),
+    picked: v.boolean(),
+    updatedByToken: v.string(),
+    updatedAt: v.number(),
+  }).index("by_eventId_and_teamNumber", ["eventId", "teamNumber"]),
   teams: defineTable({
+    avatar: v.optional(v.string()),
+    mergedIntoTeamNumber: v.optional(v.number()),
+    eventTeamAlias: v.optional(v.string()),
     eventId: v.id("events"),
     tbaTeamKey: v.string(),
     teamNumber: v.number(),
@@ -82,6 +103,7 @@ export default defineSchema({
     .index("by_eventId", ["eventId"])
     .index("by_eventId_and_matchNumber", ["eventId", "matchNumber"]),
   externalStats: defineTable({
+    eventOnly: v.optional(v.boolean()),
     eventId: v.id("events"),
     teamNumber: v.number(),
     opr: v.optional(v.number()),
@@ -91,6 +113,7 @@ export default defineSchema({
     losses: v.optional(v.number()),
     ties: v.optional(v.number()),
     averageRp: v.optional(v.number()),
+    eventRank: v.optional(v.number()),
     xp: v.optional(v.number()),
     xpSeason: v.optional(match13RatingValidator),
     xpAll: v.optional(match13RatingValidator),
@@ -116,11 +139,16 @@ export default defineSchema({
     refreshedAt: v.number(),
   }).index("by_eventId_and_matchNumber", ["eventId", "matchNumber"]),
   pitReports: defineTable({
+    photoIds: v.optional(v.array(v.id("_storage"))),
     eventId: v.id("events"),
     teamNumber: v.number(),
     scoutToken: v.string(),
     canScoreFuelHub: v.boolean(),
     canIntakeDepot: v.boolean(),
+    canIntakeOutpost: v.optional(v.boolean()),
+    electricalQuality: v.optional(v.number()),
+    buildQuality: v.optional(v.number()),
+    programmingLanguage: v.optional(v.string()),
     canIntakeFloor: v.boolean(),
     canPreload: v.boolean(),
     preloadCount: v.number(),
@@ -204,6 +232,27 @@ export default defineSchema({
       "scoutToken",
       "status",
     ]),
+  pushSubscriptions: defineTable({
+    recipientToken: v.string(),
+    endpoint: v.string(),
+    p256dh: v.string(),
+    auth: v.string(),
+    updatedAt: v.number(),
+  }).index("by_endpoint", ["endpoint"])
+    .index("by_recipientToken", ["recipientToken"]),
+  breakdownFollowUps: defineTable({
+    eventId: v.id("events"),
+    matchNumber: v.number(),
+    teamNumber: v.number(),
+    whatBroke: v.string(),
+    cause: v.string(),
+    repairStatus: v.string(),
+    notes: v.string(),
+    scoutToken: v.string(),
+    scoutName: v.string(),
+    submittedAt: v.number(),
+  }).index("by_eventId_and_matchNumber_and_teamNumber", ["eventId", "matchNumber", "teamNumber"])
+    .index("by_eventId_and_teamNumber", ["eventId", "teamNumber"]),
   scoutNotifications: defineTable({
     recipientToken: v.string(),
     eventId: v.id("events"),
@@ -243,6 +292,13 @@ export default defineSchema({
     .index("by_pickListId", ["pickListId"])
     .index("by_pickListId_and_teamNumber", ["pickListId", "teamNumber"])
     .index("by_eventId_and_teamNumber", ["eventId", "teamNumber"]),
+  mashVotes: defineTable({
+    eventId: v.id("events"),
+    ownerToken: v.string(),
+    left: v.number(),
+    right: v.number(),
+    winner: v.union(v.number(), v.null()),
+  }).index("by_eventId", ["eventId"]),
   consensusRuns: defineTable({
     eventId: v.id("events"),
     createdByToken: v.string(),
