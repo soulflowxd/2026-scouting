@@ -69,6 +69,7 @@ const emptyMatchForm: MatchFormState = {
 export function MatchScoutingRoute() {
   const me = useQuery(api.members.me)
   const { activeEvent } = useActiveEvent()
+  const myAssignments = useQuery(api.scoutAssignments.mine, activeEvent && me?.approvalStatus === "approved" ? { eventId: activeEvent._id } : "skip")
   const matches = useQuery(
     api.matchScouting.matchesForEvent,
     activeEvent ? { eventId: activeEvent._id } : "skip",
@@ -121,6 +122,15 @@ export function MatchScoutingRoute() {
           {orderedMatches.length} matches
         </div>
       </div>
+      {myAssignments?.enabled && <section className="grid gap-3 rounded-xl border border-primary/30 bg-card p-4" aria-label="My scouting assignments">
+        <div><h2 className="text-sm font-semibold">Your regular teams: {myAssignments.teams.map(team => team.label).join(", ") || "None assigned yet"}</h2>
+          <p className="mt-1 text-xs text-muted-foreground">{myAssignments.teams.length || myAssignments.matchAssignments.length ? "Your group size depends on available scouts. If your teams play together, follow the match assignment below—you may cover a different team." : "Ask an admin to include you and assign your teams. Confirmed substitute handoffs still work."}</p>
+        </div>
+        <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto">
+          {myAssignments.matchAssignments.map(slot => <Button key={`${slot.matchNumber}-${slot.teamNumber}`} size="sm" variant="outline" onClick={() => selectTeam(slot.matchNumber, slot.teamNumber)}>QM{slot.matchNumber} · {slot.label}</Button>)}
+          {!myAssignments.hasSchedule && <p className="text-xs text-muted-foreground">Match assignments will appear when the event schedule is available.</p>}
+        </div>
+      </section>}
       <div className="overflow-hidden rounded-xl border bg-card">
         <div className="flex flex-wrap items-center gap-3 border-b bg-muted/25 px-3 py-3 sm:px-4">
           <div className="flex items-center gap-2 text-sm font-medium">
@@ -375,6 +385,7 @@ function MatchForm({
   const scoutingClosed = useQuery(api.events.list)?.find(event => event._id === eventId)?.scoutingEnabled === false
   const me = useQuery(api.members.me)
   const releaseClaim = useMutation(api.matchScouting.releaseClaim)
+  const assignments = useQuery(api.scoutAssignments.mine, { eventId })
   const substitutes = useQuery(api.matchScouting.availableSubstitutes)
   const requestSubstitute = useMutation(api.matchScouting.requestSubstitute)
   const [substituteId, setSubstituteId] = useState("")
@@ -422,6 +433,7 @@ function MatchForm({
   const claim = claims?.find((item) => item.teamNumber === teamNumber && item.status === "active")
   const myClaim = claims?.find((item) => item.scoutToken === me?.tokenIdentifier && item.status === "active")
   const claimedByOther = !!claim && claim.scoutToken !== me?.tokenIdentifier
+  const allowedByAssignment = !!assignments && (!assignments.enabled || me?.role === "admin" || (assignments.hasSchedule ? assignments.matchAssignments.some(slot => slot.matchNumber === matchNumber && slot.teamNumber === teamNumber) : assignments.teams.some(team => team.teamNumber === teamNumber)) || (!!claim && claim.scoutToken === me?.tokenIdentifier))
   const [claimPending, setClaimPending] = useState(false)
 
   async function onRelease() {
@@ -508,10 +520,11 @@ function MatchForm({
             <p className="text-sm text-muted-foreground">
               {claimedByOther ? `Claimed by ${claim?.scoutName ?? "another scout"}` : claim ? "Claimed by you" : myClaim ? `You have team ${myClaim.teamNumber} claimed in this match` : "Claim required before submit"}
             </p>
+            {assignments?.enabled && !allowedByAssignment && <p className="mt-1 text-xs text-muted-foreground">This isn’t your assignment for this match. Check your match shortcuts above, ask an admin to update the assignments, or accept a substitute handoff.</p>}
           </div>
           <div className="flex flex-wrap gap-2">
           {myClaim && <Button type="button" variant="outline" disabled={claimPending || !!myClaim.substituteToken} onClick={() => void onRelease()}>Release team {myClaim.teamNumber}</Button>}
-          <Button type="button" onClick={() => void onClaim()} disabled={scoutingClosed || claims === undefined || me === undefined || Boolean(claim) || Boolean(myClaim) || claimPending}>
+          <Button type="button" onClick={() => void onClaim()} disabled={!allowedByAssignment || scoutingClosed || claims === undefined || me === undefined || Boolean(claim) || Boolean(myClaim) || claimPending}>
             Claim
           </Button>
           </div>
@@ -592,8 +605,8 @@ function MatchForm({
           onChange={(event) =>
             setForm((current) => ({ ...current, teleopNotes: event.target.value }))
           }
-          placeholder="Teleop notes"
-          aria-label="Teleop notes"
+          placeholder="Teleop notes (observations)"
+          aria-label="Teleop notes (observations)"
         />
       </FormSection>
       <FormSection title="Endgame">
@@ -671,7 +684,7 @@ function MatchForm({
           ))}
         </div>
       </FormSection>
-      <Button type="button" size="lg" disabled={scoutingClosed || saving || !form.offShiftActivity.trim() || !form.transitionActivity.trim()} onClick={() => void onSubmit()}>
+      <Button type="button" size="lg" disabled={!allowedByAssignment || scoutingClosed || saving || !form.offShiftActivity.trim() || !form.transitionActivity.trim()} onClick={() => void onSubmit()}>
         {saving ? "Saving report…" : "Submit match report"}
       </Button>
       </fieldset>

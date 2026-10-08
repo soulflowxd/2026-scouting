@@ -51,6 +51,14 @@ redirects here; keep project guidance here rather than duplicating it.
 
 ## Scouting Behavior
 
+- Admins choose event-specific participants for randomized regular-team scouting
+  assignments. Balance all teams across available scouts without a fixed group
+  limit. If regular teams overlap in a match, choose one randomly and use free
+  scouts to cover other robots. Seed match choices so all devices agree; assign
+  at most one robot per scout per match and leave coverage gaps visible. Assignment edits must not
+  transfer active claims or bypass the two-person substitute handoff. Enforce
+  assignment-only mode on backend claims and new reports, while allowing an
+  existing claim owner or confirmed substitute to finish their report.
 - Match scouting automatically syncs available official TBA alliance results for
   the selected qualification match. Keep robot cycles, activities, ratings, and
   breakdown observations scout-entered. Retain manual results when TBA is

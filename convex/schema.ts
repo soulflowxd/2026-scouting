@@ -55,6 +55,8 @@ export default defineSchema({
     .index("by_role", ["role"])
     .index("by_approvalStatus", ["approvalStatus"]),
   events: defineTable({
+    scoutAssignmentsEnabled: v.optional(v.boolean()),
+    scoutAssignmentSeed: v.optional(v.number()),
     scoutingEnabled: v.optional(v.boolean()),
     eventKey: v.string(),
     name: v.optional(v.string()),
@@ -225,6 +227,13 @@ export default defineSchema({
       "teamNumber",
       "scoutToken",
     ]),
+  scoutAssignmentParticipants: defineTable({
+    eventId: v.id("events"), memberId: v.id("members"),
+  }).index("by_eventId_and_memberId", ["eventId", "memberId"]),
+  scoutTeamAssignments: defineTable({
+    eventId: v.id("events"), teamNumber: v.number(), memberId: v.id("members"),
+  }).index("by_eventId_and_teamNumber", ["eventId", "teamNumber"])
+    .index("by_eventId_and_memberId", ["eventId", "memberId"]),
   matchRobotClaims: defineTable({
     eventId: v.id("events"),
     matchNumber: v.number(),

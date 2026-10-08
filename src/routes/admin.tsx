@@ -8,11 +8,16 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { PasswordForm } from "@/components/password-form"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { ScoutAssignmentAdmin } from "@/components/scout-assignment-admin"
+import { useActiveEvent } from "@/lib/active-event"
 
 export function AdminRoute() {
   const me = useQuery(api.members.me)
   const isAdmin = me?.role === "admin"
   const members = useQuery(api.members.listForAdmin, isAdmin ? {} : "skip")
+  const { activeEvent } = useActiveEvent()
+  const assignmentData = useQuery(api.scoutAssignments.adminList, isAdmin && activeEvent ? { eventId: activeEvent._id } : "skip")
+  const setParticipant = useMutation(api.scoutAssignments.setParticipant)
   const setApproval = useMutation(api.members.setApproval)
   const setAdminRole = useMutation(api.members.setAdminRole)
   const setName = useMutation(api.members.setName)
@@ -90,6 +95,7 @@ export function AdminRoute() {
         </div>
       </div>
 
+      {isAdmin && activeEvent && <ScoutAssignmentAdmin eventId={activeEvent._id} />}
       <label className="relative block max-w-md">
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
         <Input
@@ -133,6 +139,17 @@ export function AdminRoute() {
                 <p className="truncate text-sm text-muted-foreground">
                   {member.email || "No email available"}
                 </p>
+                {activeEvent && member.approvalStatus === "approved" && <label className="mt-2 flex items-center gap-2 text-sm">
+                  <input type="checkbox" disabled={working || !assignmentData} checked={assignmentData?.participants.includes(member._id) ?? false} onChange={async event => {
+                    const included = event.target.checked
+                    if (!included && assignmentData?.assignments.some(row => row.memberId === member._id) && !window.confirm("Remove this scout from regular assignments for this event? Active claims and handoffs will stay unchanged.")) return
+                    setWorkingId(member._id)
+                    try { await setParticipant({ eventId: activeEvent._id, memberId: member._id, included }); toast.success(included ? "Scout included for this event" : "Scout removed from regular assignments") }
+                    catch { toast.error("Could not update assignment participation") }
+                    finally { setWorkingId(null) }
+                  }} />Include in match assignments for this event
+                </label>}
+                {assignmentData?.participants.includes(member._id) && <p className="mt-1 text-xs text-muted-foreground">Regular teams: {assignmentData.assignments.filter(row => row.memberId === member._id).map(row => assignmentData.teams.find(team => team.teamNumber === row.teamNumber)?.eventTeamAlias || row.teamNumber).join(", ") || "Not assigned yet"}</p>}
                 <label className="mt-2 flex items-center gap-2 text-sm">
                   Team number
                   <select aria-label={`Team number for ${member.name || member.email || "scout"}`} value={member.teamNumber ?? ""} disabled={working} className="rounded-md border bg-background px-2 py-1" onChange={async event => {

@@ -8,6 +8,7 @@ import {
 } from "./lib/authz"
 import { matchReportInputValidator } from "./validators"
 import { reportResult } from "./lib/tbaMatchResult"
+import { requireAssignedTeam } from "./lib/scoutAssignmentAccess"
 
 const tagAllowlist = new Set([
   "Fast",
@@ -81,6 +82,7 @@ export const claimRobot = mutation({
       throw new ConvexError(`Robot already claimed by ${activeForRobot.scoutName ?? "another scout"}. Ask them or an admin to release it.`)
     }
     if (activeForRobot) return activeForRobot._id
+    await requireAssignedTeam(ctx, args, user)
 
     const activeForScout = await ctx.db
       .query("matchRobotClaims")
@@ -241,6 +243,7 @@ export const saveReport = mutation({
       throw new ConvexError("Robot already claimed by another scout")
     }
     if (!claim) {
+      await requireAssignedTeam(ctx, args, user)
       const activeForScout = await ctx.db
         .query("matchRobotClaims")
         .withIndex("by_eventId_and_matchNumber_and_scoutToken_and_status", (q) =>
