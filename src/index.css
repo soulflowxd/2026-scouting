@@ -93,3 +93,15 @@
     font-family: "Geist Variable", system-ui, sans-serif;
   }
 }
+
+@media (pointer: coarse) {
+  button, [role="button"], select, input:not([type="checkbox"]):not([type="radio"]) {
+    min-height: 44px;
+  }
+  button, [role="button"], a, select { touch-action: manipulation; }
+  [data-slot="button"] { min-width: 44px; }
+}
+
+[data-slot="dialog-content"], [data-slot="sheet-content"] {
+  overscroll-behavior: contain;
+}

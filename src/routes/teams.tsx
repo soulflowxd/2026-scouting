@@ -79,7 +79,24 @@ export function TeamsRoute() {
           />
         </label>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:hidden">
+        <label className="grid gap-1 text-xs font-medium">Sort by
+          <select value={sortBy} onChange={event => setSortBy(event.target.value as TeamSort)} className="min-h-11 rounded-lg border bg-card px-2 text-base">
+            {teamSortOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+        <label className="grid gap-1 text-xs font-medium">Order
+          <select value={sortDirection} onChange={event => setSortDirection(event.target.value as SortDirection)} className="min-h-11 rounded-lg border bg-card px-2 text-base">
+            {sortDirectionOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+        <label className="col-span-2 grid gap-1 text-xs font-medium">xP scope
+          <select value={xpScope} onChange={event => { setXpScope(event.target.value as "season" | "all"); localStorage.setItem("match13-xp-scope", event.target.value) }} className="min-h-11 rounded-lg border bg-card px-2 text-base">
+            <option value="season">In season</option><option value="all">Including offseason</option>
+          </select>
+        </label>
+      </div>
+      <div className="hidden flex-wrap items-center gap-2 sm:flex">
         <span className="text-sm font-medium">xP scope</span>
         <div role="group" aria-label="xP scope" className="inline-flex gap-1">
           {([
@@ -102,7 +119,7 @@ export function TeamsRoute() {
           ))}
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="hidden flex-wrap items-center gap-2 sm:flex">
         <span className="text-sm font-medium">Sort</span>
         {teamSortOptions.map((option) => (
           <Button
@@ -271,8 +288,11 @@ export function TeamDetailDialog({
               {!detail.matchReports.some(report => report.tags.includes("Broke down")) && detail.breakdownFollowUps.length === 0 && <p className="text-sm text-muted-foreground">No breakdowns reported at this event.</p>}
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <Metric label="Avg Auto Fuel" value={String(detail.averages.autoFuel)} />
-              <Metric label="Avg Teleop Fuel" value={String(detail.averages.teleopFuel)} />
+              <Metric label="Avg Auto Cycles" value={String(detail.averages.autoCycles ?? "—")} />
+              <Metric label="Avg Shift 1 Cycles" value={String(detail.averages.shift1Cycles ?? "—")} />
+              <Metric label="Avg Shift 2 Cycles" value={String(detail.averages.shift2Cycles ?? "—")} />
+              <Metric label="Avg Shift 3 Cycles" value={String(detail.averages.shift3Cycles ?? "—")} />
+              <Metric label="Avg Endgame Cycles" value={String(detail.averages.endgameCycles ?? "—")} />
               <Metric
                 label="Auto Hub Win"
                 value={`${Math.round(detail.averages.autoHubWinRate * 100)}%`}
@@ -333,6 +353,7 @@ export function TeamDetailDialog({
                     {report.drivetrain.toLowerCase().includes("swerve") && report.tread && <p>Tread: {report.tread}</p>}
                     {report.motorBrand && <p>Motors: {report.motorBrand}</p>}
                     {report.robotArchitecture && <p>Architecture: {report.robotArchitecture}</p>}
+                    {report.allianceRole && <p>Alliance role: {report.allianceRole}</p>}
                     {report.autoDescription && <p className="whitespace-pre-wrap break-words">Auto: {report.autoDescription}</p>}
                     {report.autoScore !== undefined && <p>Auto scoring (fuel): {report.autoScore}</p>}
                     {report.teleopScore !== undefined && <p>Teleop scoring (fuel): {report.teleopScore}</p>}
@@ -353,10 +374,17 @@ export function TeamDetailDialog({
                   <div key={report._id} className="rounded-lg border p-3 text-sm">
                     <p className="font-medium">QM{report.matchNumber}</p>
                     <p>
-                      Auto {report.autoFuel}, Teleop {report.teleopFuel}, Endgame{" "}
+                      {report.autoCycles !== undefined
+                        ? `Auto ${report.autoCycles} cycles, ${report.shift1Cycles !== undefined ? `Shift 1: ${report.shift1Cycles}, Shift 2: ${report.shift2Cycles}, Shift 3: ${report.shift3Cycles}` : `Legacy cycles per shift: ${report.teleopCyclesPerShift}`}, Endgame ${report.endgameCycles} cycles · Climb `
+                        : `Legacy fuel counts: Auto ${report.autoFuel}, Teleop ${report.teleopFuel} · Climb `}
                       {climbLabels[report.endgameClimb]}
                     </p>
                     <p>Driver {report.driverRating}/10 · Defense {report.defenseRating}/10</p>
+                    {(report.wonAuto !== undefined || report.wonMatch !== undefined || report.totalMatchPoints !== undefined) && <p>
+                      Auto win: {report.wonAuto === undefined ? "Unknown" : report.wonAuto ? "Yes" : "No"} · Match win: {report.wonMatch === undefined ? "Unknown" : report.wonMatch ? "Yes" : "No"} · Alliance points: {report.totalMatchPoints ?? "Unknown"}
+                    </p>}
+                    {report.offShiftActivity && <p className="whitespace-pre-wrap break-words">Off-shift: {report.offShiftActivity}</p>}
+                    {report.transitionActivity && <p className="whitespace-pre-wrap break-words">Transition: {report.transitionActivity}</p>}
                     {!!report.tags.length && <p className="mt-1 text-muted-foreground">{report.tags.join(" · ")}</p>}
                     {report.autoNotes && <p className="whitespace-pre-wrap break-words">Auto: {report.autoNotes}</p>}
                     {report.teleopNotes && <p className="whitespace-pre-wrap break-words">Teleop: {report.teleopNotes}</p>}

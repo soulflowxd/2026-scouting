@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { DeviceNotifications, DeviceNotificationsProvider } from "@/components/device-notifications"
+import { DeviceNotifications } from "@/components/device-notifications"
+import { ScoutHandoffs } from "@/components/scout-handoffs"
 import { disconnectDeviceNotifications } from "@/lib/device-notifications"
 import { useActiveEvent } from "@/lib/active-event"
 import {
@@ -75,6 +76,7 @@ function NavItems({
 }
 
 export function RootRoute() {
+  const [menuOpen, setMenuOpen] = useState(false)
   const navigate = useNavigate()
   const { setTheme } = useTheme()
   const { signOut } = useAuthActions()
@@ -139,25 +141,24 @@ export function RootRoute() {
   }, [activeEvent, isAuthenticated, syncBreakdownAlerts])
 
   return (
-    <DeviceNotificationsProvider>
     <div className="min-h-svh bg-background text-foreground">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-3 sm:px-4">
-          <Sheet>
+          <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
             <SheetTrigger render={<Button variant="ghost" size="icon" className="xl:hidden" />}>
               <Menu aria-hidden="true" />
               <span className="sr-only">Menu</span>
             </SheetTrigger>
-            <SheetContent side="left" className="w-80">
+            <SheetContent side="left" className="w-80 max-w-[90vw] overflow-y-auto overscroll-contain">
               <SheetHeader>
                 <SheetTitle>2026 Scouting</SheetTitle>
               </SheetHeader>
               <nav className="grid gap-1 px-3">
-                <NavItems role={me?.role} />
+                <NavItems role={me?.role} onNavigate={() => setMenuOpen(false)} />
               </nav>
             </SheetContent>
           </Sheet>
-          <div className="min-w-0 max-w-48 shrink-0">
+          <div className="min-w-0 max-w-48 flex-1 xl:flex-none">
             <p className="text-sm font-semibold">2026 Scouting</p>
             <p className="truncate text-xs text-muted-foreground">
               {activeEvent ? (activeEvent.name || activeEvent.eventKey) : "No event imported"}
@@ -293,12 +294,12 @@ export function RootRoute() {
           )}
         </DialogContent>
       </Dialog>
-      <main className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
+      <main className="mx-auto w-full min-w-0 max-w-7xl px-3 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-4 sm:py-6">
         {activeEvent?.scoutingEnabled === false && <p role="status" className="mb-4 rounded-lg border bg-muted px-4 py-3 text-sm">Scouting submissions are closed for this event. An admin can enable them in Event setup. Existing data remains viewable.</p>}
+        <ScoutHandoffs />
         <Outlet />
       </main>
     </div>
-    </DeviceNotificationsProvider>
   )
 }
 

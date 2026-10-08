@@ -2,6 +2,7 @@ import { authTables } from "@convex-dev/auth/server"
 import { defineSchema, defineTable } from "convex/server"
 import { v } from "convex/values"
 import { match13RatingValidator } from "./lib/match13"
+import { tbaResultValidator } from "./lib/tbaMatchResult"
 
 const pickTier = v.union(
   v.literal("tier1"),
@@ -93,6 +94,8 @@ export default defineSchema({
     .index("by_eventId", ["eventId"])
     .index("by_eventId_and_teamNumber", ["eventId", "teamNumber"]),
   matches: defineTable({
+    tbaResult: v.optional(tbaResultValidator),
+    tbaCheckedAt: v.optional(v.number()),
     eventId: v.id("events"),
     tbaMatchKey: v.string(),
     matchNumber: v.number(),
@@ -163,6 +166,7 @@ export default defineSchema({
     tread: v.optional(v.string()),
     motorBrand: v.optional(v.string()),
     robotArchitecture: v.optional(v.string()),
+    allianceRole: v.optional(v.string()),
     autoDescription: v.optional(v.string()),
     autoScore: v.optional(v.number()),
     teleopScore: v.optional(v.number()),
@@ -187,18 +191,29 @@ export default defineSchema({
     matchNumber: v.number(),
     teamNumber: v.number(),
     scoutToken: v.string(),
-    autoFuel: v.number(),
+    autoFuel: v.optional(v.number()),
+    autoCycles: v.optional(v.number()),
+    teleopCyclesPerShift: v.optional(v.number()),
+    shift1Cycles: v.optional(v.number()),
+    shift2Cycles: v.optional(v.number()),
+    shift3Cycles: v.optional(v.number()),
+    transitionActivity: v.optional(v.string()),
+    endgameCycles: v.optional(v.number()),
+    offShiftActivity: v.optional(v.string()),
     autoClimb: v.union(v.literal("none"), v.literal("level1")),
     autoNotes: v.string(),
-    teleopFuel: v.number(),
+    teleopFuel: v.optional(v.number()),
     teleopNotes: v.string(),
     endgameClimb: climbLevel,
     endgameNotes: v.string(),
     driverRating: v.number(),
     defenseRating: v.number(),
     tags: v.array(v.string()),
-    autoAllianceFuel: v.number(),
-    opponentAutoFuel: v.number(),
+    autoAllianceFuel: v.optional(v.number()),
+    opponentAutoFuel: v.optional(v.number()),
+    wonAuto: v.optional(v.boolean()),
+    wonMatch: v.optional(v.boolean()),
+    totalMatchPoints: v.optional(v.number()),
     updatedAt: v.number(),
   })
     .index("by_eventId", ["eventId"])
@@ -219,7 +234,15 @@ export default defineSchema({
     status: v.union(v.literal("active"), v.literal("released")),
     claimedAt: v.number(),
     releasedAt: v.optional(v.number()),
+    substituteToken: v.optional(v.string()),
+    substituteName: v.optional(v.string()),
+    breakRequestedAt: v.optional(v.number()),
+    substituteAcceptedAt: v.optional(v.number()),
+    handoffFromToken: v.optional(v.string()),
+    handoffCompletedAt: v.optional(v.number()),
   })
+    .index("by_scoutToken", ["scoutToken"])
+    .index("by_substituteToken", ["substituteToken"])
     .index("by_eventId_and_matchNumber_and_teamNumber_and_status", [
       "eventId",
       "matchNumber",

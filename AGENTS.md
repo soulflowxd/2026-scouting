@@ -51,6 +51,10 @@ redirects here; keep project guidance here rather than duplicating it.
 
 ## Scouting Behavior
 
+- Match scouting automatically syncs available official TBA alliance results for
+  the selected qualification match. Keep robot cycles, activities, ratings, and
+  breakdown observations scout-entered. Retain manual results when TBA is
+  unavailable or unposted; never invent TBA match keys for custom events.
 - Keep external statistics tied to the selected event and current year. Never
   substitute another year's EPA when current-year data is unavailable.
 - Preserve independent in-season and offseason/all xP scopes.
@@ -83,7 +87,7 @@ redirects here; keep project guidance here rather than duplicating it.
 - Team logos must come from TBA, not local logo overrides. The supplied ITKAN
   image is the app favicon. Team-color accents come from FRC Colors; preserve
   readable card text and neutral fallbacks when branding is unavailable.
-- Pit reports require at least one robot photo, with up to six photos, each no
+- Pit reports require at least one robot photo, with up to four photos, each no
   larger than 10 MB. Validate uploaded storage metadata on the backend.
 - Support phone-camera capture and multiple-file uploads. Preserve existing
   reports without photos, but require a photo when submitting updates.

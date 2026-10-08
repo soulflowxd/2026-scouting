@@ -6,7 +6,7 @@ import { api } from "../../convex/_generated/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { DeviceNotifications, DeviceNotificationsProvider } from "@/components/device-notifications"
+import { DeviceNotifications } from "@/components/device-notifications"
 
 type AuthGateProps = {
   children: ReactNode
@@ -170,14 +170,12 @@ export function AuthGate({ children }: AuthGateProps) {
 
   if (me.approvalStatus === "pending") {
     return (
-      <DeviceNotificationsProvider>
       <AccountStatusCard
         icon={<Clock3 className="size-6" aria-hidden="true" />}
         title="Waiting for admin approval"
         description="Your account was created successfully. An admin needs to approve it before you can use scouting."
         onSignOut={() => void signOut()}
       ><DeviceNotifications /></AccountStatusCard>
-      </DeviceNotificationsProvider>
     )
   }
 

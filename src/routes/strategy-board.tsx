@@ -61,7 +61,15 @@ function Board({ storageKey, title, teams }: { storageKey: string; title: string
       <Button variant={placing ? "default" : "outline"} aria-pressed={placing} disabled={!board[active].team} onClick={() => setPlacing(!placing)}><MapPin />Place robot</Button>
     </div>
     {storageError && <p role="alert" className="text-sm text-destructive">Board could not be saved in this browser.</p>}
-    <AutoPath key={active} value={board[active].paths} color={stations[active].color} readOnly={!board[active].team}
+    <AutoPath value={board[active].paths} color={stations[active].color} readOnly={!board[active].team}
+      fullscreenControls={<div className="flex shrink-0 flex-wrap items-center gap-2">
+        <label className="flex min-w-0 flex-1 items-center gap-2 text-xs">Robot
+          <select aria-label="Active robot" value={active} className="min-h-11 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm" onChange={event => { setActive(Number(event.target.value)); setPlacing(false) }}>
+            {stations.map((station, index) => <option key={station.name} value={index}>{station.name}{board[index].team ? ` · ${board[index].team}` : " · No team"}</option>)}
+          </select>
+        </label>
+        <Button type="button" variant={placing ? "default" : "outline"} disabled={!board[active].team} aria-pressed={placing} onClick={() => setPlacing(!placing)}><MapPin aria-hidden="true" />Place robot</Button>
+      </div>}
       onChange={(paths) => { setPlacing(false); update(active, { paths }) }}
       onPlace={placing ? (position) => { update(active, { position }); setPlacing(false) } : undefined}
       layers={board.flatMap((s, i) => i === active || !s.team ? [] : [{ color: stations[i].color, paths: s.paths }])}

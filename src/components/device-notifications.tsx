@@ -1,12 +1,18 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
-import { useMutation, useQuery } from "convex/react"
+import { useConvexAuth, useMutation, useQuery } from "convex/react"
 import { ConvexError } from "convex/values"
 import { api } from "../../convex/_generated/api"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { disconnectDeviceNotifications } from "@/lib/device-notifications"
 
-const promptStorageKey = "scouting-device-notification-prompt-v1"
+const promptStorageKey = "scouting-device-notification-prompt-session-v2"
+
+function shouldPrompt() {
+  if (typeof window === "undefined") return false
+  if ("Notification" in window && Notification.permission === "granted") return false
+  try { return sessionStorage.getItem(promptStorageKey) !== "done" } catch { return true }
+}
 
 function notificationError(error: unknown) {
   if (error instanceof ConvexError) {
@@ -35,21 +41,21 @@ function applicationKey(value: string) {
 }
 
 export function DeviceNotificationsProvider({ children }: { children: ReactNode }) {
+  const { isAuthenticated } = useConvexAuth()
+  const me = useQuery(api.members.me, isAuthenticated ? {} : "skip")
+  const canRegister = me?.approvalStatus === "approved" || me?.approvalStatus === "pending"
   const publicKey = useQuery(api.pushSubscriptions.publicKey)
   const save = useMutation(api.pushSubscriptions.save)
   const remove = useMutation(api.pushSubscriptions.remove)
   const [enabled, setEnabled] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const [promptOpen, setPromptOpen] = useState(false)
+  const [promptOpen, setPromptOpen] = useState(shouldPrompt)
   const supported = typeof window !== "undefined" && window.isSecureContext && "Notification" in window && "PushManager" in window && "serviceWorker" in navigator
 
   useEffect(() => {
     let cancelled = false
-    let alreadyAsked = false
-    try { alreadyAsked = localStorage.getItem(promptStorageKey) === "done" } catch { /* Storage may be unavailable in private browsing. */ }
-    if (!alreadyAsked && (!supported || Notification.permission !== "granted")) setPromptOpen(true)
-    if (!supported) return
+    if (!supported || !canRegister) return
     async function restore() {
       await navigator.serviceWorker.register("/sw.js")
       const registration = await navigator.serviceWorker.ready
@@ -68,10 +74,10 @@ export function DeviceNotificationsProvider({ children }: { children: ReactNode 
     }
     void restore().catch(error => { if (!cancelled) setMessage(notificationError(error)) })
     return () => { cancelled = true }
-  }, [publicKey, save, supported])
+  }, [publicKey, save, supported, canRegister, me?.tokenIdentifier])
 
   function dismissPrompt() {
-    try { localStorage.setItem(promptStorageKey, "done") } catch { /* The prompt can still be dismissed without storage. */ }
+    try { sessionStorage.setItem(promptStorageKey, "done") } catch { /* The prompt can still be dismissed without storage. */ }
     setPromptOpen(false)
   }
 
@@ -84,9 +90,10 @@ export function DeviceNotificationsProvider({ children }: { children: ReactNode 
         setEnabled(false)
         return
       }
-      if (!publicKey) { setMessage("Device notifications are being set up. Please try again shortly."); return }
       const permission = await Notification.requestPermission()
       if (permission !== "granted") { setMessage("Allow notifications in your browser's site settings to receive device alerts."); return }
+      if (!canRegister) { dismissPrompt(); return }
+      if (!publicKey) { setMessage("Device notifications are being set up. Please try again shortly."); return }
       await navigator.serviceWorker.register("/sw.js")
       const registration = await navigator.serviceWorker.ready
       const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationKey(publicKey) })
@@ -116,11 +123,11 @@ export function DeviceNotificationsProvider({ children }: { children: ReactNode 
           <DialogHeader>
             <DialogTitle>Allow scouting notifications</DialogTitle>
             <DialogDescription>
-              Get robot breakdown alerts on this device, even when Scouting is closed. Tap an alert at the team's pit to record what happened.
+              Turn on notifications so you don’t miss scouting alerts and robot breakdowns, even when Scouting is closed. {isAuthenticated ? "Tap a breakdown alert to record what happened at the pit." : "After you sign in, we’ll connect this device to your account."}
             </DialogDescription>
           </DialogHeader>
           {supported ? (
-            <Button type="button" onClick={() => void toggle()} disabled={busy || publicKey === undefined}>
+            <Button type="button" onClick={() => void toggle()} disabled={busy}>
               {busy ? "Connecting…" : "Allow notifications"}
             </Button>
           ) : (

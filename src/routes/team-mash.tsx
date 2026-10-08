@@ -52,16 +52,19 @@ function MashGame({ eventId, eventName, year, minimumTeams }: { eventId: Id<"eve
   }
   const lastMine = [...votes].reverse().find(vote => vote.mine)
 
-  return <section className="mx-auto grid w-full max-w-6xl gap-6 pb-8">
+  return <section className="mx-auto grid w-full min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] gap-4 pb-8 sm:gap-6 [&>*]:min-w-0">
     <div className="flex flex-wrap items-start justify-between gap-4">
-      <div><p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Head-to-head scouting</p><h1 className="mt-1 text-3xl font-semibold">Rank Teams</h1><p className="mt-2 text-sm text-muted-foreground">Which robot would you pick? Compare the evidence, then choose.</p><p className="mt-1 text-xs text-muted-foreground">{eventName}</p></div>
-      <div className="rounded-xl border bg-card px-4 py-3"><p className="text-2xl font-semibold tabular-nums">{votes.length}</p><p className="text-xs text-muted-foreground">comparisons made</p></div>
+      <div className="min-w-0 flex-1"><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Rank Teams</h1><p className="mt-1 text-sm text-muted-foreground">Compare two robots. Pick your favorite.</p><p className="mt-1 hidden text-xs text-muted-foreground sm:block">{eventName}</p></div>
+      <div className="rounded-lg bg-muted/50 px-3 py-2 text-right"><p className="text-lg font-semibold tabular-nums">{votes.length}</p><p className="text-[11px] text-muted-foreground">votes</p></div>
     </div>
+    {saveError && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">Could not save the change. Please try again.</p>}
+    <details className="rounded-xl border bg-card p-3 [&[open]>summary]:mb-4">
+      <summary className="cursor-pointer text-sm font-medium">Matchup filters <span className="ml-2 text-xs font-normal text-muted-foreground">{percent === 100 ? "All teams" : `Top ${percent}%`} · {eligible.length} eligible</span></summary>
+      <div className="grid gap-3">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <label className="flex items-center gap-2 text-sm">xP scope<select className="rounded-md border bg-background px-3 py-2" value={scope} onChange={event => setScope(event.target.value as "season" | "all")}><option value="season">In-season</option><option value="all">All / offseason</option></select></label>
       <p className="text-xs text-muted-foreground">Shared votes from all scouts · synced across devices · does not reorder pick lists</p>
     </div>
-    {saveError && <p role="alert" className="text-sm text-destructive">Could not save the change. Please try again.</p>}
     {skippedCount > 0 && <p className="text-xs text-muted-foreground">Skipping {skippedCount} teams with no stats or scouting reports. They’ll be included when information becomes available.</p>}
     <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3">
       <label className="grid gap-1 text-xs">Filter matchups by<select value={filterMetric} className="rounded-md border bg-background p-2 text-sm" onChange={event => { setFilterMetric(event.target.value as "epa" | "elo"); setPair(null) }}><option value="epa">EPA</option><option value="elo">Shared Mash Elo</option></select></label>
@@ -72,8 +75,10 @@ function MashGame({ eventId, eventName, year, minimumTeams }: { eventId: Id<"eve
       </label>
       <p className="text-xs text-muted-foreground">{eligible.length} eligible teams. Keeps at least {minimumTeams} teams with known scores, or all available if fewer. Cutoff ties are included. Elo filters exclude unranked teams.</p>
     </div>
+      </div>
+    </details>
     {teams === undefined || sharedVotes === undefined ? <p>Loading teams and shared rankings…</p> : !current ? <p className="rounded-xl border p-6">Fewer than two teams match this filter. Choose a larger percentage or All teams to build more Elo ratings.</p> : <>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-2 items-start gap-2 sm:gap-4">
         {current.map((number, index) => {
           const team = teams.find(team => team.teamNumber === number)
           return team && <RobotCard key={number} team={team} eventId={eventId} year={year} side={index === 0 ? "A" : "B"} onChoose={() => void choose(number)} onDetails={() => setSelectedTeam(number)} disabled={saving || votes.length >= 5000} />
@@ -112,13 +117,13 @@ function RobotCard({ team, eventId, year, side, onChoose, onDetails, disabled }:
     const values = detail?.pitReports.flatMap(report => report[key] === undefined ? [] : [report[key]!]) ?? []
     return values.length ? `${(values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1)} / 10 (${values.length} report${values.length === 1 ? "" : "s"})` : "Unknown"
   }
-  const format = (value?: number) => value === undefined ? "Unknown" : value.toFixed(1)
-  return <article className="grid content-start gap-3 rounded-xl border bg-card p-3 sm:p-4">
-    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs text-muted-foreground">ROBOT {side}</p><div className="mt-2 flex items-center gap-3"><TeamAvatar teamNumber={team.teamNumber} year={year} avatar={team.avatar} /><h2 className="text-4xl font-semibold tabular-nums">{team.eventTeamAlias ?? team.teamNumber}</h2></div><p className="mt-2 text-muted-foreground">{team.nickname}</p></div><Button size="sm" variant="outline" onClick={onDetails}>Team info</Button></div>
-    <Button className="w-full" onClick={onChoose} disabled={disabled || detail === undefined}>Pick {team.eventTeamAlias ?? team.teamNumber}</Button>
-    <dl className="grid grid-cols-3 gap-2">{[["EPA", format(team.epa)], ["xP", format(team.xp)], ["RP", format(team.averageRp)]].map(([label, value]) => <div key={label} className="rounded-md bg-muted/60 px-3 py-2"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="text-lg font-semibold tabular-nums">{value}</dd></div>)}</dl>
+  const format = (value?: number) => value === undefined ? "—" : value.toFixed(1)
+  return <article className="grid min-w-0 content-start gap-3 rounded-xl border bg-card p-2 sm:p-4">
+    <div className="grid min-w-0 gap-2 lg:flex lg:items-start lg:justify-between"><div className="min-w-0"><p className="text-xs text-muted-foreground">ROBOT {side}</p><div className="mt-2 flex flex-wrap items-center gap-2"><TeamAvatar teamNumber={team.teamNumber} year={year} avatar={team.avatar} /><h2 className="break-all text-xl font-semibold tabular-nums sm:text-3xl">{team.eventTeamAlias ?? team.teamNumber}</h2></div><p className="mt-2 line-clamp-2 min-h-10 break-words text-sm text-muted-foreground" title={team.nickname}>{team.nickname}</p></div><Button size="sm" variant="outline" onClick={onDetails}>Team info</Button></div>
+    <Button className="min-h-11 w-full px-1 text-xs sm:text-sm" onClick={onChoose} disabled={disabled || detail === undefined}>Pick {team.eventTeamAlias ?? team.teamNumber}</Button>
+    <dl className="grid grid-cols-3 gap-1 sm:gap-2">{[["EPA", format(team.epa)], ["xP", format(team.xp)], ["RP", format(team.averageRp)]].map(([label, value]) => <div key={label} className="min-w-0 rounded-md bg-muted/60 px-1 py-2 sm:px-3"><dt className="text-[10px] text-muted-foreground sm:text-xs">{label}</dt><dd className="break-all text-xs font-semibold tabular-nums sm:text-lg" aria-label={value === "—" ? `${label} unknown` : undefined}>{value}</dd></div>)}</dl>
     <RobotPhotos eventId={eventId} teamNumber={team.teamNumber} year={year} photoIds={[...new Set([...(detail?.pitReports ?? [])].sort((a, b) => b.updatedAt - a.updatedAt).flatMap(report => report.photoIds ?? []))].slice(0, 6)} />
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">{[["Matches played (event)", played ?? "Unknown"], ["Matches scouted", scoutedMatches ?? "Loading…"], ["Breakdowns", breakdowns === undefined ? "Loading…" : `${breakdowns} / ${scoutedMatches} scouted`], ["Electrical quality", quality("electricalQuality")], ["Build quality", quality("buildQuality")]].map(([label, value]) => <div key={label} className="border-t pt-2" title={label === "Breakdowns" ? "Unique scouted matches, not duplicate reports. Unscouted matches may have unreported failures." : undefined}><dt className="text-muted-foreground">{label}</dt><dd className="mt-0.5 font-medium tabular-nums">{value}</dd></div>)}</dl>
+    <dl className="grid grid-cols-1 gap-x-4 gap-y-2 break-words text-xs sm:grid-cols-2">{[["Matches played (event)", played ?? "Unknown"], ["Matches scouted", scoutedMatches ?? "Loading…"], ["Breakdowns", breakdowns === undefined ? "Loading…" : `${breakdowns} / ${scoutedMatches} scouted`], ["Electrical quality", quality("electricalQuality")], ["Build quality", quality("buildQuality")]].map(([label, value]) => <div key={label} className="min-w-0 border-t pt-2" title={label === "Breakdowns" ? "Unique scouted matches, not duplicate reports. Unscouted matches may have unreported failures." : undefined}><dt className="text-muted-foreground">{label}</dt><dd className="mt-0.5 font-medium tabular-nums">{value}</dd></div>)}</dl>
   </article>
 }
 
@@ -146,10 +151,15 @@ function RobotPhotos({ eventId, teamNumber, photoIds, year }: { eventId: Id<"eve
   const available = [...(source === "tba" ? [] : (photos ?? []).map(photo => ({ ...photo, source: "Our pit scouting" }))), ...(source === "ours" ? [] : external.map(photo => ({ ...photo, source: "The Blue Alliance" })))].filter(photo => photo.url && !failed.includes(photo.id))
   const active = available.find(photo => photo.id === selected) ?? available[0]
   return <div className="grid gap-2">
-    <div className="flex flex-wrap gap-2">{([['all', 'All photos'], ['ours', 'Our photos'], ['tba', 'TBA photos']] as const).map(([value, label]) => <Button key={value} size="sm" variant={source === value ? "secondary" : "ghost"} onClick={() => { setSource(value); setSelected(null) }} aria-pressed={source === value}>{label}</Button>)}</div>
+    <label className="grid gap-1 text-[11px] text-muted-foreground sm:hidden">Photo source
+      <select className="min-h-11 min-w-0 w-full rounded-md border bg-background px-2 text-sm text-foreground" value={source} onChange={event => { setSource(event.target.value as typeof source); setSelected(null) }}>
+        <option value="all">All photos</option><option value="ours">Our photos</option><option value="tba">TBA photos</option>
+      </select>
+    </label>
+    <div className="hidden flex-wrap gap-2 sm:flex">{([['all', 'All photos'], ['ours', 'Our photos'], ['tba', 'TBA photos']] as const).map(([value, label]) => <Button key={value} size="sm" variant={source === value ? "secondary" : "ghost"} onClick={() => { setSource(value); setSelected(null) }} aria-pressed={source === value}>{label}</Button>)}</div>
     {!active?.url ? <p className="rounded-xl border p-4 text-xs text-muted-foreground">{source === "ours" ? "No pit photos available." : mediaStatus || "No photos available."}</p> : <>
     <a href={active.url} target="_blank" rel="noreferrer" aria-label={`Open robot photo for team ${teamNumber}`} className="block overflow-hidden rounded-xl border bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-      <img src={active.url} alt={`Team ${teamNumber} robot from ${active.source}`} className="h-40 w-full object-contain lg:h-44" onError={() => setFailed(current => [...current, active.id])} />
+      <img src={active.url} alt={`Team ${teamNumber} robot from ${active.source}`} className="h-24 w-full object-contain sm:h-40 lg:h-44" onError={() => setFailed(current => [...current, active.id])} />
     </a>
     {available.length > 1 && <div className="flex gap-2 overflow-x-auto pb-2" aria-label={`Robot photos for team ${teamNumber}`}>
       {available.map((photo, index) => <button key={photo.id} type="button" onClick={() => setSelected(photo.id)} aria-label={`Show robot photo ${index + 1} for team ${teamNumber}`} aria-pressed={active.id === photo.id} className={`shrink-0 overflow-hidden rounded-md border bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active.id === photo.id ? "ring-2 ring-primary" : "opacity-70 hover:opacity-100"}`}>

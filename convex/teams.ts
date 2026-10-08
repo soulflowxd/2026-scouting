@@ -70,7 +70,7 @@ export const list = query({
           teamReports.reduce((sum, report) => sum + report.driverRating, 0) /
           Math.max(teamReports.length, 1)
         const teleopAverage =
-          teamReports.reduce((sum, report) => sum + report.teleopFuel, 0) /
+          teamReports.reduce((sum, report) => sum + (report.teleopFuel ?? 0), 0) /
           Math.max(teamReports.length, 1)
         const endgameScores = teamReports.map((report) =>
           climbScore(report.endgameClimb),
@@ -151,17 +151,27 @@ export const detail = query({
 
     const count = Math.max(matchReports.length, 1)
     const autoHubWins = matchReports.filter(
-      (report) => report.autoAllianceFuel > report.opponentAutoFuel,
+      (report) => report.wonAuto ?? (report.autoAllianceFuel !== undefined && report.opponentAutoFuel !== undefined && report.autoAllianceFuel > report.opponentAutoFuel),
     ).length
+    function cycleAverage(field: "autoCycles" | "teleopCyclesPerShift" | "endgameCycles" | "shift1Cycles" | "shift2Cycles" | "shift3Cycles") {
+      const values = matchReports.flatMap(report => report[field] === undefined ? [] : [report[field]])
+      return values.length ? Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1)) : null
+    }
     const averages = {
+      autoCycles: cycleAverage("autoCycles"),
+      teleopCyclesPerShift: cycleAverage("teleopCyclesPerShift"),
+      shift1Cycles: cycleAverage("shift1Cycles"),
+      shift2Cycles: cycleAverage("shift2Cycles"),
+      shift3Cycles: cycleAverage("shift3Cycles"),
+      endgameCycles: cycleAverage("endgameCycles"),
       autoFuel: Number(
         (
-          matchReports.reduce((sum, report) => sum + report.autoFuel, 0) / count
+          matchReports.reduce((sum, report) => sum + (report.autoFuel ?? 0), 0) / count
         ).toFixed(1),
       ),
       teleopFuel: Number(
         (
-          matchReports.reduce((sum, report) => sum + report.teleopFuel, 0) /
+          matchReports.reduce((sum, report) => sum + (report.teleopFuel ?? 0), 0) /
           count
         ).toFixed(1),
       ),

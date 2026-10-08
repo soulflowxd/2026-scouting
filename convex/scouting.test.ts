@@ -6,6 +6,47 @@ import schema from "./schema"
 
 const modules = import.meta.glob("./**/*.ts")
 
+test("substitution requires both scouts and transfers the claim atomically", async () => {
+  const { t, eventId } = await seedEvent()
+  const owner = await approvedScout(t, "owner@example.com", "handoff-owner")
+  const substitute = await approvedScout(t, "sub@example.com", "handoff-sub")
+  const outsider = await approvedScout(t, "outside@example.com", "handoff-outsider")
+  const candidates = await owner.query(api.matchScouting.availableSubstitutes, {})
+  const subId = candidates.find(member => member.name === "sub")!._id
+  const claimId = await owner.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 1 })
+  await expect(outsider.mutation(api.matchScouting.requestSubstitute, { claimId, substituteId: subId })).rejects.toThrow("assigned scout")
+  await owner.mutation(api.matchScouting.requestSubstitute, { claimId, substituteId: subId })
+  const request = (await substitute.query(api.matchScouting.myHandoffs, {}))[0]
+  const requestedAt = request.breakRequestedAt!
+  await expect(owner.mutation(api.matchScouting.releaseClaim, { claimId })).rejects.toThrow("handoff")
+  await expect(owner.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "confirm" })).rejects.toThrow("accept before")
+  await expect(owner.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "accept" })).rejects.toThrow("own account")
+  await expect(outsider.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "accept" })).rejects.toThrow("these two scouts")
+  const busyClaim = await substitute.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 2 })
+  await expect(substitute.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "accept" })).rejects.toThrow("already has a robot")
+  await substitute.mutation(api.matchScouting.releaseClaim, { claimId: busyClaim })
+  await substitute.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "accept" })
+  expect((await owner.query(api.matchScouting.claimsForMatch, { eventId, matchNumber: 1 })).find(claim => claim._id === claimId)?.scoutToken).toBe("handoff-owner")
+  await owner.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "confirm" })
+  const transferred = (await owner.query(api.matchScouting.claimsForMatch, { eventId, matchNumber: 1 })).find(claim => claim._id === claimId)
+  expect(transferred).toMatchObject({ status: "active", scoutToken: "handoff-sub", handoffFromToken: "handoff-owner" })
+  expect(await substitute.query(api.matchScouting.myHandoffs, {})).toEqual([])
+  await expect(owner.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "confirm" })).rejects.toThrow("no longer active")
+})
+
+test("declining a substitution keeps the original assignment", async () => {
+  const { t, eventId } = await seedEvent()
+  const owner = await approvedScout(t, "owner@example.com", "handoff-owner")
+  const substitute = await approvedScout(t, "sub@example.com", "handoff-sub")
+  const subId = (await owner.query(api.matchScouting.availableSubstitutes, {})).find(member => member.name === "sub")!._id
+  const claimId = await owner.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 1 })
+  await owner.mutation(api.matchScouting.requestSubstitute, { claimId, substituteId: subId })
+  const request = (await substitute.query(api.matchScouting.myHandoffs, {}))[0]
+  await substitute.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt: request.breakRequestedAt!, action: "cancel" })
+  expect(await owner.query(api.matchScouting.myHandoffs, {})).toEqual([])
+  expect((await owner.query(api.matchScouting.claimsForMatch, { eventId, matchNumber: 1 }))[0]).toMatchObject({ scoutToken: "handoff-owner", status: "active" })
+})
+
 function setAdminEnv() {
   vi.stubEnv("ADMIN_EMAILS", "admin@example.com")
   vi.stubEnv("TBA_API_KEY", "test")
@@ -102,6 +143,9 @@ describe("scouting backend", () => {
       autoPath: [[{ x: 10, y: 20 }, { x: 900, y: 450 }]],
     }
     const id = await scout.mutation(api.pit.save, report)
+    await scout.mutation(api.pit.save, { ...report, allianceRole: " Primary scorer / defense " })
+    expect((await scout.query(api.pit.getForTeam, { eventId, teamNumber: 1 }))[0].allianceRole).toBe("Primary scorer / defense")
+    await expect(scout.mutation(api.pit.save, { ...report, allianceRole: "x".repeat(201) })).rejects.toThrow("200 characters")
     await expect(scout.mutation(api.pit.save, { ...report, electricalQuality: 0 })).rejects.toThrow("1 to 10")
     await expect(scout.mutation(api.pit.save, { ...report, buildQuality: 10.5 })).rejects.toThrow("1 to 10")
     await expect(scout.mutation(api.pit.save, { ...report, programmingLanguage: " " })).rejects.toThrow("programming language")
@@ -111,7 +155,9 @@ describe("scouting backend", () => {
     await expect(scout.mutation(api.pit.save, { ...report, photoIds: undefined })).rejects.toThrow("at least one robot photo")
     const invalidPhoto = await t.run(async ctx => await ctx.storage.store(new Blob(["not an image"], { type: "text/plain" })))
     await expect(scout.mutation(api.pit.save, { ...report, photoIds: [invalidPhoto] })).rejects.toThrow("images under 10 MB")
-    await expect(scout.mutation(api.pit.save, { ...report, photoIds: Array(7).fill(photoId) })).rejects.toThrow("Maximum 6")
+    await scout.mutation(api.pit.save, { ...report, photoIds: Array(4).fill(photoId) })
+    await scout.mutation(api.pit.save, report)
+    await expect(scout.mutation(api.pit.save, { ...report, photoIds: Array(5).fill(photoId) })).rejects.toThrow("Maximum 4")
     expect((await scout.query(api.pit.getForTeam, { eventId, teamNumber: 1 }))[0]).toMatchObject(report)
     await expect(scout.mutation(api.pit.save, { ...report, bps: -1 })).rejects.toThrow("BPS")
     await expect(scout.mutation(api.pit.save, { ...report, intakeBps: -1 })).rejects.toThrow("non-negative")
@@ -294,7 +340,27 @@ describe("scouting backend", () => {
       opponentAutoFuel: 3,
     }
 
-    await scoutA.mutation(api.matchScouting.saveReport, report)
+    const cycleReport = { ...report, autoFuel: undefined, teleopFuel: undefined,
+      autoCycles: 2, teleopCyclesPerShift: 3, endgameCycles: 1, offShiftActivity: "  Collect fuel and defend  " }
+    await expect(scoutA.mutation(api.matchScouting.saveReport, { ...cycleReport, autoCycles: 1.5 })).rejects.toThrow("whole-number cycle counts")
+    await expect(scoutA.mutation(api.matchScouting.saveReport, { ...cycleReport, offShiftActivity: " " })).rejects.toThrow("off-shift")
+    await scoutA.mutation(api.matchScouting.saveReport, cycleReport)
+    const cycleDetail = await scoutA.query(api.teams.detail, { eventId, teamNumber: 1 })
+    expect(cycleDetail?.averages).toMatchObject({ autoCycles: 2, teleopCyclesPerShift: 3, endgameCycles: 1 })
+    expect(cycleDetail?.matchReports[0].offShiftActivity).toBe("Collect fuel and defend")
+    const shiftedReport = { ...cycleReport, teleopCyclesPerShift: undefined,
+      shift1Cycles: 1, shift2Cycles: 2, shift3Cycles: 3, transitionActivity: "  Collect and reposition  ",
+      autoAllianceFuel: undefined, opponentAutoFuel: undefined, wonAuto: true, wonMatch: true, totalMatchPoints: 250 }
+    await expect(scoutA.mutation(api.matchScouting.saveReport, { ...shiftedReport, totalMatchPoints: -1 })).rejects.toThrow("Total match points")
+    await expect(scoutA.mutation(api.matchScouting.saveReport, { ...shiftedReport, shift2Cycles: -1 })).rejects.toThrow("whole-number cycle counts")
+    await expect(scoutA.mutation(api.matchScouting.saveReport, { ...shiftedReport, shift3Cycles: undefined })).rejects.toThrow("whole-number cycle counts")
+    await expect(scoutA.mutation(api.matchScouting.saveReport, { ...shiftedReport, transitionActivity: " " })).rejects.toThrow("transition")
+    await scoutA.mutation(api.matchScouting.saveReport, shiftedReport)
+    const shiftedDetail = await scoutA.query(api.teams.detail, { eventId, teamNumber: 1 })
+    expect(shiftedDetail?.averages).toMatchObject({ shift1Cycles: 1, shift2Cycles: 2, shift3Cycles: 3 })
+    expect(shiftedDetail?.matchReports[0].transitionActivity).toBe("Collect and reposition")
+    expect(shiftedDetail?.matchReports[0]).toMatchObject({ wonAuto: true, wonMatch: true, totalMatchPoints: 250 })
+    expect(shiftedDetail?.averages.autoHubWinRate).toBe(1)
     await lateScout.mutation(api.members.ensureMe, {})
     const lateMember = (await admin.query(api.members.listForAdmin, {})).find(
       (member) => member.tokenIdentifier === "scout-late",

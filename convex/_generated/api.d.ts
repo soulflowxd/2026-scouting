@@ -21,6 +21,7 @@ import type * as lib_nexusMap from "../lib/nexusMap.js";
 import type * as lib_scoutingAccess from "../lib/scoutingAccess.js";
 import type * as lib_signupProfile from "../lib/signupProfile.js";
 import type * as lib_tbaAvatars from "../lib/tbaAvatars.js";
+import type * as lib_tbaMatchResult from "../lib/tbaMatchResult.js";
 import type * as lib_tbaTeamKeys from "../lib/tbaTeamKeys.js";
 import type * as mash from "../mash.js";
 import type * as matchScouting from "../matchScouting.js";
@@ -32,6 +33,7 @@ import type * as pickLists from "../pickLists.js";
 import type * as pit from "../pit.js";
 import type * as push from "../push.js";
 import type * as pushSubscriptions from "../pushSubscriptions.js";
+import type * as tbaMatches from "../tbaMatches.js";
 import type * as teams from "../teams.js";
 import type * as validators from "../validators.js";
 
@@ -55,6 +57,7 @@ declare const fullApi: ApiFromModules<{
   "lib/scoutingAccess": typeof lib_scoutingAccess;
   "lib/signupProfile": typeof lib_signupProfile;
   "lib/tbaAvatars": typeof lib_tbaAvatars;
+  "lib/tbaMatchResult": typeof lib_tbaMatchResult;
   "lib/tbaTeamKeys": typeof lib_tbaTeamKeys;
   mash: typeof mash;
   matchScouting: typeof matchScouting;
@@ -66,6 +69,7 @@ declare const fullApi: ApiFromModules<{
   pit: typeof pit;
   push: typeof push;
   pushSubscriptions: typeof pushSubscriptions;
+  tbaMatches: typeof tbaMatches;
   teams: typeof teams;
   validators: typeof validators;
 }>;

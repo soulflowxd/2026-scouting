@@ -20,14 +20,14 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { useMutation, useQuery } from "convex/react"
-import { ArrowLeft, ClipboardList, GitMerge, GripVertical, Plus, Search } from "lucide-react"
+import { ArrowLeft, ChevronRight, ClipboardList, GitMerge, GripVertical, Plus, Search } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { eventLabel, useActiveEvent } from "@/lib/active-event"
+import { useActiveEvent } from "@/lib/active-event"
 import { tierLabels } from "@/lib/labels"
 import { TeamDetailDialog } from "@/routes/teams"
 import { TeamAvatar } from "@/components/team-avatar"
@@ -133,7 +133,7 @@ export function PickListsRoute() {
   if (selectedList) {
     return (
       <section className="flex h-[calc(100svh-5.5rem)] min-h-0 flex-col gap-4 overflow-hidden sm:h-[calc(100svh-6.5rem)]">
-        <div className="flex shrink-0 items-center justify-between gap-3">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedListId(null)}>
               <ArrowLeft aria-hidden="true" />
@@ -141,7 +141,7 @@ export function PickListsRoute() {
             </Button>
             <h1 className="mt-2 truncate text-2xl font-semibold">{selectedList.name}</h1>
           </div>
-          <span className="shrink-0 rounded-md border px-2 py-1 text-xs text-muted-foreground">
+          <span className="shrink-0 rounded-md bg-muted/50 px-2 py-1 text-[11px] text-muted-foreground">
             {selectedList.kind === "primary" ? "Main · admin editing only" : "Personal"}
           </span>
         </div>
@@ -163,85 +163,52 @@ export function PickListsRoute() {
   }
 
   return (
-    <section className="flex h-[calc(100svh-5.5rem)] min-h-0 flex-col gap-4 overflow-hidden sm:h-[calc(100svh-6.5rem)]">
-      <div className="shrink-0 rounded-xl border bg-card p-4 shadow-sm">
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <ClipboardList className="size-4" aria-hidden="true" />
-          Pick Lists
-        </p>
-        <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">
-          Build personal boards and merge the best one.
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">{eventLabel(activeEvent)}</p>
-        <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,2fr)]">
+    <section className="mx-auto grid w-full max-w-2xl gap-6 pb-6">
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight">Pick lists</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{activeEvent.name || activeEvent.eventKey}</p>
+      </header>
+      <button type="button" onClick={() => {
+        if (primaryList) setSelectedListId(primaryList._id)
+        else void onEnsurePrimary()
+      }} className="group flex min-h-24 w-full items-center gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4 text-left transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"><ClipboardList className="size-5" aria-hidden="true" /></span>
+        <span className="min-w-0 flex-1"><span className="block font-semibold">Main pick list</span><span className="mt-1 block text-xs text-muted-foreground">Shared board · {me?.role === "admin" ? "Admin editing" : "View only"}</span></span>
+        <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </button>
+      <section className="grid gap-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Personal lists <span className="ml-1 tabular-nums">{personalLists.length}</span></h2>
+        {personalLists.length ? <div className="divide-y overflow-hidden rounded-xl border bg-card">
+          {personalLists.map(list => <button key={list._id} type="button" onClick={() => setSelectedListId(list._id)} className="flex min-h-16 w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+            <span className="min-w-0 break-words text-sm font-medium">{list.name}</span><ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          </button>)}
+        </div> : <p className="py-2 text-sm text-muted-foreground">No personal lists yet. Create one to start ranking.</p>}
+        <details className="group rounded-xl border border-dashed px-4 py-3">
+          <summary className="flex min-h-6 cursor-pointer list-none items-center gap-2 text-sm font-medium text-primary [&::-webkit-details-marker]:hidden"><Plus className="size-4" aria-hidden="true" />Create personal list</summary>
+          <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
           <Input
+            aria-label="New personal list name"
             value={newName}
             onChange={(event) => setNewName(event.target.value)}
             placeholder="Drive team list"
           />
           <Button
             type="button"
-            className="bg-neutral-950 text-white hover:bg-neutral-800"
+            disabled={!newName.trim()}
             onClick={() => void onCreatePersonal()}
           >
             <Plus aria-hidden="true" />
-            New personal
+            Create list
           </Button>
-        </div>
-      </div>
-
-      <div className="grid min-h-0 flex-1 gap-4 overflow-hidden lg:grid-cols-2">
-        <button
-          type="button"
-          onClick={() => {
-            if (primaryList) setSelectedListId(primaryList._id)
-            else void onEnsurePrimary()
-          }}
-          className="grid min-h-48 content-end rounded-xl border bg-card p-4 text-left shadow-sm transition-colors hover:bg-muted/40"
-        >
-          <ClipboardList className="size-6 text-muted-foreground" aria-hidden="true" />
-          <div className="mt-10">
-            <h2 className="text-lg font-semibold">Primary pick list</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              View the shared main board. Only admins can edit it.
-            </p>
           </div>
-        </button>
+        </details>
+      </section>
 
-        <div className="grid min-h-48 rounded-xl border bg-card p-4 shadow-sm">
-          {personalLists.length ? (
-            <div className="grid content-start gap-2 overflow-y-auto pr-1">
-              {personalLists.map((list) => (
-                <button
-                  key={list._id}
-                  type="button"
-                  onClick={() => setSelectedListId(list._id)}
-                  className="rounded-lg border bg-background px-3 py-2 text-left text-sm font-medium shadow-sm transition-colors hover:bg-muted"
-                >
-                  {list.name}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="grid place-items-center text-center text-sm font-medium text-muted-foreground">
-              Create a personal pick list above to open a full-screen board.
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="shrink-0 rounded-xl border bg-card p-4 shadow-sm">
-        <div className="flex items-start gap-2">
-          <GitMerge className="mt-0.5 size-5 text-muted-foreground" aria-hidden="true" />
-          <div>
-            <h2 className="font-semibold">Consensus merge</h2>
-            <p className="text-sm text-muted-foreground">
-              Select personal boards to preview or apply to primary.
-            </p>
-          </div>
-        </div>
+      {me?.role === "admin" && <details className="border-t pt-4">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground [&::-webkit-details-marker]:hidden"><GitMerge className="size-4" aria-hidden="true" />Consensus tools<ChevronRight className="ml-auto size-4" aria-hidden="true" /></summary>
+        <p className="mt-2 text-xs text-muted-foreground">Preview the combined personal rankings, then apply them to the main board.</p>
         <div className="mt-4 grid gap-3">
-          <select className="h-9 rounded-lg border border-input bg-background px-3 text-sm">
+          <select aria-label="Personal boards for consensus" className="h-11 rounded-lg border border-input bg-background px-3 text-sm">
             {personalLists.length ? (
               personalLists.map((list) => (
                 <option key={list._id} value={list._id}>
@@ -265,7 +232,6 @@ export function PickListsRoute() {
             </Button>
             <Button
               type="button"
-              className="bg-neutral-500 text-white hover:bg-neutral-600"
               onClick={() => void onApplyConsensus()}
               disabled={
                 me?.role !== "admin" || !latestConsensus
@@ -275,7 +241,7 @@ export function PickListsRoute() {
             </Button>
           </div>
         </div>
-      </div>
+      </details>}
     </section>
   )
 }
@@ -319,6 +285,7 @@ function PickBoard({
   const [selectedTeam, setSelectedTeam] = useState<number | null>(null)
   const [savingTeam, setSavingTeam] = useState<number | null>(null)
   const [teamSearch, setTeamSearch] = useState("")
+  const [mobileTier, setMobileTier] = useState<Tier>("uncategorized")
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, {
@@ -345,6 +312,26 @@ function PickBoard({
     }))
   }, [items, teams, pendingPlacements, ownTeamNumber, ownEventRank, teamColors, mashRatings])
   const normalizedSearch = teamSearch.trim().toLowerCase()
+  async function moveToTier(teamNumber: number, tier: Tier) {
+    if (readOnly || savingMove.current) return
+    const current = boardItems.find(item => item.teamNumber === teamNumber)
+    if (!current || current.tier === tier) return
+    const placements = boardItems.filter(item => item.tier === tier && item.teamNumber !== teamNumber)
+      .sort((a, b) => a.rank - b.rank)
+      .map((item, rank) => ({ teamNumber: item.teamNumber, tier, rank }))
+    placements.push({ teamNumber, tier, rank: placements.length })
+    placements.push(...boardItems.filter(item => item.tier === current.tier && item.teamNumber !== teamNumber)
+      .sort((a, b) => a.rank - b.rank)
+      .map((item, rank) => ({ teamNumber: item.teamNumber, tier: item.tier as Tier, rank })))
+    savingMove.current = true
+    setPendingPlacements(placements)
+    try {
+      const result = await moveTeams({ pickListId: listId, placements })
+      if (!result.ok) toast.error(result.error)
+      else toast.success(`Moved to ${tierLabels[tier]}`)
+    } catch { toast.error("Could not move team. Please try again.") }
+    finally { savingMove.current = false; setPendingPlacements(null) }
+  }
   async function togglePicked(teamNumber: number, picked: boolean) {
     setSavingTeam(teamNumber)
     try {
@@ -364,6 +351,10 @@ function PickBoard({
     }
     return null
   }, [boardItems, normalizedSearch])
+  const searchTier = boardItems.find(item => item.teamNumber === firstSearchMatch)?.tier
+  useEffect(() => {
+    if (searchTier) setMobileTier(searchTier as Tier)
+  }, [searchTier])
 
   async function onDragEnd(event: DragEndEvent) {
     setDraggedTeam(null)
@@ -441,8 +432,8 @@ function PickBoard({
     >
       <div className="flex min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden">
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-muted-foreground">Click a team for pit reports and breakdowns. Admins can mark picked teams to cross them out across all lists.</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground">Tap a team for reports and breakdowns.</p>
+          <p className="hidden text-xs text-muted-foreground sm:block">
             {ownTeamNumber === undefined ? "Ask an admin to assign your team number for standings comparisons." : ownEventRank === undefined ? `Event rank for team ${ownTeamNumber} is unavailable. Refresh event stats to load standings.` : `Your team ${ownTeamNumber} is ranked #${ownEventRank}. Higher-ranked teams are flagged, but can go anywhere in your list.`}
           </p>
           <div className="relative w-full sm:w-64">
@@ -460,8 +451,14 @@ function PickBoard({
             />
           </div>
         </div>
-        <div className="grid min-h-0 flex-1 grid-cols-[repeat(5,minmax(12rem,1fr))] gap-3 overflow-x-auto pb-1">
+        <label className="grid shrink-0 gap-1 text-xs font-medium sm:hidden">Tier
+          <select className="min-h-11 rounded-lg border bg-card px-3 text-base" value={mobileTier} onChange={event => setMobileTier(event.target.value as Tier)}>
+            {columns.map(tier => <option key={tier} value={tier}>{tierLabels[tier]} · {boardItems.filter(item => item.tier === tier).length}</option>)}
+          </select>
+        </label>
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 pb-1 sm:grid-cols-[repeat(5,minmax(12rem,1fr))] sm:overflow-x-auto">
           {columns.map((tier) => (
+            <div key={tier} className={`min-h-0 ${mobileTier === tier ? "block" : "hidden"} sm:block`}>
             <PickColumn
               key={tier}
               tier={tier}
@@ -469,12 +466,14 @@ function PickBoard({
               searchQuery={normalizedSearch}
               firstSearchMatch={firstSearchMatch}
               onSelect={setSelectedTeam}
+              onMove={(teamNumber, tier) => void moveToTier(teamNumber, tier)}
               onPicked={(teamNumber, picked) => void togglePicked(teamNumber, picked)}
               savingTeam={savingTeam}
               items={boardItems
                 .filter((item) => item.tier === tier)
                 .sort((a, b) => a.rank - b.rank)}
             />
+            </div>
           ))}
         </div>
       </div>
@@ -495,6 +494,7 @@ function PickBoard({
 }
 
 function PickColumn({
+  onMove,
   onSelect,
   onPicked,
   savingTeam,
@@ -504,6 +504,7 @@ function PickColumn({
   searchQuery,
   firstSearchMatch,
 }: {
+  onMove: (teamNumber: number, tier: Tier) => void
   onSelect: (teamNumber: number) => void
   onPicked: (teamNumber: number, picked: boolean) => void
   savingTeam: number | null
@@ -545,6 +546,7 @@ function PickColumn({
         strategy={verticalListSortingStrategy}
       >
         <div className="grid min-h-0 content-start gap-2 overflow-y-auto pr-1">
+          {!items.length && <p className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">No teams in this tier yet.</p>}
           {items.map((item) => (
             <PickCard
               key={item.teamNumber}
@@ -555,6 +557,7 @@ function PickColumn({
               shouldScrollIntoView={item.teamNumber === firstSearchMatch}
               searchQuery={searchQuery}
               onSelect={() => onSelect(item.teamNumber)}
+              onMove={(tier) => onMove(item.teamNumber, tier)}
               onPicked={() => onPicked(item.teamNumber, !item.picked)}
               savingPicked={savingTeam !== null}
             />
@@ -566,6 +569,7 @@ function PickColumn({
 }
 
 function PickCard({
+  onMove,
   onSelect,
   onPicked,
   savingPicked,
@@ -576,6 +580,7 @@ function PickCard({
   shouldScrollIntoView,
   searchQuery,
 }: {
+  onMove: (tier: Tier) => void
   onSelect: () => void
   onPicked: () => void
   savingPicked: boolean
@@ -677,6 +682,13 @@ function PickCard({
           </div>
         ))}
       </dl>
+      {!readOnly && <label className="grid gap-1 text-xs text-muted-foreground sm:hidden">
+        Move to tier
+        <select className="min-h-11 w-full rounded-md border bg-background px-2 text-sm text-foreground"
+          value={item.tier} onChange={event => onMove(event.target.value as Tier)}>
+          {columns.map(tier => <option key={tier} value={tier}>{tierLabels[tier]}</option>)}
+        </select>
+      </label>}
       {item.eventRank !== undefined && <p className="text-xs text-muted-foreground">Event rank #{item.eventRank}</p>}
       <p className="text-xs text-muted-foreground">Shared Mash Elo: <span className="font-semibold tabular-nums text-foreground">{item.mashElo === undefined ? "Unranked" : Math.round(item.mashElo)}</span></p>
       {item.higherRankedThanOwnTeam && <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-700 dark:text-amber-300">Ranked above your team ({item.ownTeamNumber}) · still available to rank</p>}

@@ -35,6 +35,7 @@ type PitFormState = Record<MeasurementKey, string> & {
   tread: string
   motorBrand: string
   robotArchitecture: string
+  allianceRole: string
   electricalQuality: string
   buildQuality: string
   programmingLanguage: string
@@ -66,6 +67,7 @@ const emptyPitForm: PitFormState = {
   tread: "",
   motorBrand: "",
   robotArchitecture: "",
+  allianceRole: "",
   electricalQuality: "",
   buildQuality: "",
   programmingLanguage: "",
@@ -249,6 +251,7 @@ function PitForm({
         tread: latest.tread ?? "",
         motorBrand: latest.motorBrand ?? "",
         robotArchitecture: latest.robotArchitecture ?? "",
+        allianceRole: latest.allianceRole ?? "",
         electricalQuality: latest.electricalQuality?.toString() ?? "",
         buildQuality: latest.buildQuality?.toString() ?? "",
         programmingLanguage: latest.programmingLanguage ?? "",
@@ -270,7 +273,7 @@ function PitForm({
 
   async function uploadPhotos(files: File[]) {
     if (!files.length || uploading || saving) return
-    if (photoIds.length + files.length > 6) { toast.error("Maximum 6 robot photos"); return }
+    if (photoIds.length + files.length > 4) { toast.error("Maximum 4 robot photos"); return }
     if (files.some(file => !["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type) || file.size > 10 * 1024 * 1024)) { toast.error("Choose JPG, PNG, WebP or GIF images under 10 MB"); return }
     setUploading(true)
     try {
@@ -339,25 +342,6 @@ function PitForm({
           Back
         </Button>
       </div>
-      <FormSection title="Robot photos">
-        <p className="text-sm text-muted-foreground">{photoIds.length}/6 photos · At least 1 required</p>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" disabled={uploading || saving || reports === undefined || photoIds.length >= 6} onClick={() => cameraInput.current?.click()}><Camera />Take photo</Button>
-          <Button type="button" variant="outline" disabled={uploading || saving || reports === undefined || photoIds.length >= 6} onClick={() => uploadInput.current?.click()}><Upload />Upload photos</Button>
-        </div>
-        <input ref={cameraInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif" capture="environment" className="hidden" aria-label="Take robot photo" onChange={event => {
-          const files = Array.from(event.target.files ?? [])
-          event.target.value = ""
-          void uploadPhotos(files)
-        }} />
-        <input ref={uploadInput} type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" aria-label="Upload robot photos" onChange={event => {
-          const files = Array.from(event.target.files ?? [])
-          event.target.value = ""
-          void uploadPhotos(files)
-        }} />
-        {uploading && <p role="status" className="text-sm text-muted-foreground">Uploading photos...</p>}
-        <PitPhotos photoIds={photoIds} onRemove={uploading || saving ? undefined : id => setPhotoIds(current => current.filter(photo => photo !== id))} />
-      </FormSection>
       <FormSection title="Fuel">
         <CheckRow label="Scores Fuel in Hub" checked={form.canScoreFuelHub} onChange={(value) => setBool("canScoreFuelHub", value)} />
         <CheckRow label="Intakes from Depot" checked={form.canIntakeDepot} onChange={(value) => setBool("canIntakeDepot", value)} />
@@ -418,6 +402,13 @@ function PitForm({
           <div className="grid gap-2">
             <Label htmlFor="robotArchitecture">Robot architecture type</Label>
             <Input id="robotArchitecture" value={form.robotArchitecture} onChange={(event) => setForm((current) => ({ ...current, robotArchitecture: event.target.value }))} placeholder="Dumper, turret, fixed shooter..." />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="allianceRole">What is their role on an alliance?</Label>
+            <Input id="allianceRole" list="allianceRoleOptions" maxLength={200} value={form.allianceRole} onChange={event => setForm(current => ({ ...current, allianceRole: event.target.value }))} placeholder="Primary scorer, defense, feeder..." />
+            <datalist id="allianceRoleOptions">
+              {["Primary scorer", "Secondary scorer", "Defense", "Feeder / fuel support", "Flexible / all-rounder", "Unknown"].map(role => <option key={role} value={role} />)}
+            </datalist>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="bps">BPS (balls per second)</Label>
@@ -482,7 +473,26 @@ function PitForm({
           />
         </div>
       </FormSection>
-      <Button type="button" size="lg" disabled={scoutingClosed || uploading || saving || !photoIds.length || reports === undefined} onClick={() => void onSubmit()}>
+      <FormSection title="Robot photos">
+        <p className="text-sm text-muted-foreground">{photoIds.length}/4 photos · At least 1 required{photoIds.length > 4 ? " · Remove extra photos before saving" : ""}</p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" disabled={uploading || saving || reports === undefined || photoIds.length >= 4} onClick={() => cameraInput.current?.click()}><Camera />Take photo</Button>
+          <Button type="button" variant="outline" disabled={uploading || saving || reports === undefined || photoIds.length >= 4} onClick={() => uploadInput.current?.click()}><Upload />Upload photos</Button>
+        </div>
+        <input ref={cameraInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif" capture="environment" className="hidden" aria-label="Take robot photo" onChange={event => {
+          const files = Array.from(event.target.files ?? [])
+          event.target.value = ""
+          void uploadPhotos(files)
+        }} />
+        <input ref={uploadInput} type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" aria-label="Upload robot photos" onChange={event => {
+          const files = Array.from(event.target.files ?? [])
+          event.target.value = ""
+          void uploadPhotos(files)
+        }} />
+        {uploading && <p role="status" className="text-sm text-muted-foreground">Uploading photos...</p>}
+        <PitPhotos photoIds={photoIds} onRemove={uploading || saving ? undefined : id => setPhotoIds(current => current.filter(photo => photo !== id))} />
+      </FormSection>
+      <Button type="button" size="lg" disabled={scoutingClosed || uploading || saving || !photoIds.length || photoIds.length > 4 || reports === undefined} onClick={() => void onSubmit()}>
         {saving ? "Saving..." : "Submit pit report"}
       </Button>
     </div>
@@ -491,8 +501,8 @@ function PitForm({
 
 function FormSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="grid gap-3 rounded-xl border bg-card p-4">
-      <h3 className="font-medium">{title}</h3>
+    <div className="grid gap-3 rounded-xl border bg-card p-4 sm:p-5">
+      <h3 className="border-b pb-3 text-sm font-semibold tracking-tight">{title}</h3>
       {children}
     </div>
   )
@@ -508,7 +518,7 @@ function CheckRow({
   onChange: (checked: boolean) => void
 }) {
   return (
-    <label className="flex min-h-11 items-center gap-3 rounded-lg bg-muted px-3">
+    <label className="flex min-h-12 items-center gap-3 rounded-lg border border-transparent bg-muted/40 px-3 py-2 has-[[data-checked]]:border-primary/30">
       <Checkbox checked={checked} onCheckedChange={(value) => onChange(value === true)} />
       <span className="text-sm font-medium">{label}</span>
     </label>

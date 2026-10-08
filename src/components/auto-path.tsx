@@ -1,15 +1,18 @@
-import { useEffect, useId, useRef, useState, type PointerEvent } from "react"
-import { Pencil, Route, Undo2, Trash2 } from "lucide-react"
+import { useEffect, useId, useRef, useState, type PointerEvent, type ReactNode } from "react"
+import { Maximize2, Minimize2, Pencil, Route, Undo2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 export type PathPoint = { x: number; y: number }
-export function AutoPath({ value, onChange, readOnly = false, color = "#7e22ce", layers = [], markers = [], onPlace }: {
+export function AutoPath({ value, onChange, readOnly = false, color = "#7e22ce", layers = [], markers = [], onPlace, fullscreenControls }: {
   value: PathPoint[][]; onChange?: (value: PathPoint[][]) => void; readOnly?: boolean
   color?: string
   layers?: { color: string; paths: PathPoint[][] }[]
   markers?: { color: string; label: string; position: PathPoint }[]
   onPlace?: (point: PathPoint) => void
+  fullscreenControls?: ReactNode
 }) {
+  const [fullscreen, setFullscreen] = useState(false)
   const [mode, setMode] = useState<"line" | "points">("line")
   const carpetFilter = useId()
   const drawing = useRef(false)
@@ -22,7 +25,9 @@ export function AutoPath({ value, onChange, readOnly = false, color = "#7e22ce",
     const rect = event.currentTarget.getBoundingClientRect()
     return { x: Math.round(Math.max(0, Math.min(1000, (event.clientX - rect.left) / rect.width * 1000))), y: Math.round(Math.max(0, Math.min(500, (event.clientY - rect.top) / rect.height * 500))) }
   }
-  return <div className="grid min-w-0 gap-2">
+  const content = <div className={fullscreen ? "flex h-full min-h-0 min-w-0 flex-col gap-2" : "grid min-w-0 gap-2"}>
+    {fullscreen ? <DialogHeader className="shrink-0 flex-row items-center justify-between"><DialogTitle>Field view</DialogTitle><Button type="button" variant="outline" onClick={() => setFullscreen(false)}><Minimize2 aria-hidden="true" />Exit full screen</Button></DialogHeader> : <div className="flex justify-end"><Button type="button" variant="outline" size="sm" onClick={() => setFullscreen(true)}><Maximize2 aria-hidden="true" />Full screen</Button></div>}
+    {fullscreen && fullscreenControls}
     {!readOnly && <div className="flex flex-wrap gap-2">
       <div className="flex gap-1" role="group" aria-label="Drawing mode">
         <Button type="button" variant={mode === "line" ? "default" : "outline"} aria-pressed={mode === "line"} onClick={() => setMode("line")}><Pencil />Line</Button>
@@ -34,7 +39,8 @@ export function AutoPath({ value, onChange, readOnly = false, color = "#7e22ce",
       }}><Undo2 /></Button>
       <Button type="button" variant="outline" size="icon" title="Clear path" aria-label="Clear path" disabled={!value.length} onClick={() => update([])}><Trash2 /></Button>
     </div>}
-    <svg viewBox="0 0 1000 500" aria-label="Auto path drawing area" className={`block aspect-[2/1] w-full rounded-md border bg-background ${readOnly ? "" : "touch-none cursor-crosshair"}`}
+    <div className={fullscreen ? "grid min-h-0 flex-1 place-items-center [container-type:size]" : "min-w-0"}>
+    <svg viewBox="0 0 1000 500" aria-label="Auto path drawing area" className={`block aspect-[2/1] ${fullscreen ? "w-[min(100cqw,200cqh)]" : "w-full"} rounded-md border bg-background ${readOnly ? "" : "touch-none cursor-crosshair"}`}
       onPointerDown={(event) => {
         if (readOnly || event.button !== 0 || current.current.reduce((sum, path) => sum + path.length, 0) >= 2000) return
         if (onPlace) { onPlace(point(event)); return }
@@ -78,6 +84,12 @@ export function AutoPath({ value, onChange, readOnly = false, color = "#7e22ce",
         <text textAnchor="middle" dominantBaseline="middle" fill="white" fontSize={13} fontWeight={700}>{marker.label}</text>
       </g>)}
     </svg>
+    </div>
     <a href="https://www.chiefdelphi.com/t/2026-strategy-board-field-images/514729" target="_blank" rel="noreferrer" className="text-xs text-muted-foreground underline underline-offset-4">REBUILT field image by _AD</a>
   </div>
+  return fullscreen ? <Dialog open={fullscreen} onOpenChange={setFullscreen}>
+    <DialogContent showCloseButton={false} aria-describedby={undefined} className="inset-0 top-0 left-0 h-dvh w-screen max-w-none translate-x-0 translate-y-0 rounded-none p-3 pt-[max(.75rem,env(safe-area-inset-top))] pb-[max(.75rem,env(safe-area-inset-bottom))] sm:max-w-none">
+      {content}
+    </DialogContent>
+  </Dialog> : content
 }
