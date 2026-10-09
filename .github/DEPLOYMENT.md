@@ -16,9 +16,11 @@ Use the IDs from `.vercel/project.json` after linking the existing project with
 Store the production Convex deploy key in the existing Vercel project's
 production environment as `CONVEX_DEPLOY_KEY`.
 
-The workflow runs tests, pulls the production environment, and uses
-`vercel build --prod` followed by `vercel deploy --prebuilt --prod`. The existing
-`vercel.json` build command deploys Convex and builds the frontend together.
+The workflow runs tests and a frontend build check, then uses
+`vercel deploy --prod --yes` to build on Vercel. The existing `vercel.json`
+build command deploys Convex and builds the frontend together. Keep sensitive
+production secrets on Vercel: environment downloads may return empty values
+for sensitive variables, so do not move the production build into GitHub.
 
 The token owner must have deployment permission under the Vercel project's
 plan and access policies. This workflow does not override those policies.
