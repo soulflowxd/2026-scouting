@@ -1,9 +1,10 @@
-import { mkdir, writeFile } from "node:fs/promises"
+import { appendFile, mkdir, writeFile } from "node:fs/promises"
 
 const token = process.env.VERCEL_TOKEN?.trim()
 const orgId = process.env.VERCEL_ORG_ID?.trim()
 const projectId = process.env.VERCEL_PROJECT_ID?.trim()
 if (!token || !orgId || !projectId) throw new Error("Missing Vercel repository secrets")
+if ([token, orgId, projectId].some(value => /\s/.test(value))) throw new Error("Vercel secrets contain unexpected internal whitespace")
 
 const url = new URL(`https://api.vercel.com/v9/projects/${encodeURIComponent(projectId)}`)
 url.searchParams.set("teamId", orgId)
@@ -18,4 +19,7 @@ if (project.name !== "2026-scouting" || project.id !== projectId || project.acco
 }
 await mkdir(".vercel", { recursive: true })
 await writeFile(".vercel/project.json", JSON.stringify({ orgId, projectId, projectName: project.name }))
+if (process.env.GITHUB_ENV) {
+  await appendFile(process.env.GITHUB_ENV, `VERCEL_TOKEN=${token}\nVERCEL_ORG_ID=${orgId}\nVERCEL_PROJECT_ID=${projectId}\n`)
+}
 console.log("Verified and linked the existing 2026-scouting production project")

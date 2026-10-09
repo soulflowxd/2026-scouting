@@ -43,12 +43,12 @@ jobs:
       - name: Test
         run: npm test
       - name: Install Vercel CLI
-        run: npm install --global vercel@54.14.5
+        run: npm install --global vercel@63.1.0
       - name: Verify and link existing Vercel project
         run: node scripts/link-vercel-ci.mjs
       - name: Pull production configuration
-        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+        run: vercel pull --yes --environment=production --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
       - name: Build and deploy Convex
-        run: vercel build --prod --token="$VERCEL_TOKEN"
+        run: vercel build --prod --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
       - name: Deploy frontend
-        run: vercel deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN"
+        run: vercel deploy --prebuilt --prod --yes --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
