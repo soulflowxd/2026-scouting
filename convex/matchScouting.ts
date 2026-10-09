@@ -264,6 +264,11 @@ export const saveReport = mutation({
   args: matchReportInputValidator,
   handler: async (ctx, args) => {
     const user = await requireApprovedUserFromDb(ctx)
+    if (args.clientSubmissionId) {
+      if (args.clientSubmissionId.length > 100) throw new ConvexError("Invalid submission identifier")
+      const previous = await ctx.db.query("matchReports").withIndex("by_eventId_and_matchNumber_and_teamNumber_and_scoutToken", q => q.eq("eventId", args.eventId).eq("matchNumber", args.matchNumber).eq("teamNumber", args.teamNumber)).first()
+      if (previous?.clientSubmissionId === args.clientSubmissionId && previous.scoutToken === user.tokenIdentifier) return previous._id
+    }
     await requireScoutingOpen(ctx, args.eventId)
     const shifts = [args.shift1Cycles, args.shift2Cycles, args.shift3Cycles]
     if (args.totalMatchPoints !== undefined && (!Number.isInteger(args.totalMatchPoints) || args.totalMatchPoints < 0 || args.totalMatchPoints > 9999)) {

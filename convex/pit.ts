@@ -57,6 +57,11 @@ export const save = mutation({
   args: pitReportInputValidator,
   handler: async (ctx, args) => {
     const user = await requireApprovedUserFromDb(ctx)
+    if (args.clientSubmissionId) {
+      if (args.clientSubmissionId.length > 100) throw new ConvexError("Invalid submission identifier")
+      const previous = await ctx.db.query("pitReports").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId).eq("teamNumber", args.teamNumber)).first()
+      if (previous?.clientSubmissionId === args.clientSubmissionId && previous.scoutToken === user.tokenIdentifier) return previous._id
+    }
     await requireScoutingOpen(ctx, args.eventId)
     for (const value of [args.electricalQuality, args.buildQuality]) {
       if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > 10)) throw new ConvexError("Quality ratings must be whole numbers from 1 to 10")

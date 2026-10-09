@@ -51,6 +51,15 @@ redirects here; keep project guidance here rather than duplicating it.
 
 ## Scouting Behavior
 
+- Save pit and match submissions durably in the device's IndexedDB outbox before
+  clearing forms. Include pit photo files, scope queued data to the deployment
+  and canonical scout, and upload automatically while that scout is signed in
+  and connected. Remove queued reports only after server acknowledgement.
+  Retain upload errors with a retry option; never bypass authorization, event
+  closure, assignments, or report locks. Use client submission IDs to make
+  retries idempotent. Device-local drafts are not submitted reports. Uploads
+  require the app to be open; do not promise closed-app background syncing.
+
 - Pit reports lock a team at that event after submission; match reports lock a
   team in that specific match. Reject repeat submissions from every role until
   an approved admin deletes the existing report(s). Admins can delete individual

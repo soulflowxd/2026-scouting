@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { DeviceNotifications } from "@/components/device-notifications"
+import { OfflineUploads } from "@/components/offline-uploads"
 import { ScoutHandoffs } from "@/components/scout-handoffs"
 import { disconnectDeviceNotifications } from "@/lib/device-notifications"
 import { useActiveEvent } from "@/lib/active-event"
@@ -302,6 +303,7 @@ export function RootRoute() {
       <main id="main-content" tabIndex={-1} className="mx-auto w-full min-w-0 max-w-7xl py-4 pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] outline-none sm:px-4 sm:py-6">
         {activeEvent?.scoutingEnabled === false && <p role="status" className="mb-4 rounded-lg border bg-muted px-4 py-3 text-sm">Scouting submissions are closed for this event. An admin can enable them in Event setup. Existing data remains viewable.</p>}
         <ScoutHandoffs />
+        <OfflineUploads owner={isAuthenticated && me?.approvalStatus !== "pending" && me?.approvalStatus !== "rejected" ? me?.tokenIdentifier : undefined} />
         <Outlet />
       </main>
     </div>

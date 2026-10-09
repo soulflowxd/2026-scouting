@@ -146,6 +146,7 @@ export default defineSchema({
     refreshedAt: v.number(),
   }).index("by_eventId_and_matchNumber", ["eventId", "matchNumber"]),
   pitReports: defineTable({
+    clientSubmissionId: v.optional(v.string()),
     photoIds: v.optional(v.array(v.id("_storage"))),
     eventId: v.id("events"),
     teamNumber: v.number(),
@@ -191,6 +192,7 @@ export default defineSchema({
     .index("by_eventId", ["eventId"])
     .index("by_eventId_and_teamNumber", ["eventId", "teamNumber"]),
   matchReports: defineTable({
+    clientSubmissionId: v.optional(v.string()),
     eventId: v.id("events"),
     matchNumber: v.number(),
     teamNumber: v.number(),

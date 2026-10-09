@@ -21,6 +21,7 @@ export const climbLevelValidator = v.union(
 )
 
 export const pitReportInputValidator = {
+  clientSubmissionId: v.optional(v.string()),
   photoIds: v.optional(v.array(v.id("_storage"))),
   eventId: v.id("events"),
   teamNumber: v.number(),
@@ -63,6 +64,7 @@ export const pitReportInputValidator = {
 }
 
 export const matchReportInputValidator = {
+  clientSubmissionId: v.optional(v.string()),
   eventId: v.id("events"),
   matchNumber: v.number(),
   teamNumber: v.number(),

@@ -1,6 +1,7 @@
-import { useAction, useMutation, useQuery } from "convex/react"
+import { useAction, useQuery } from "convex/react"
+import { deleteDraft, queueReport, readDraft, writeDraft } from "@/lib/scouting-outbox"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Camera, Upload, MapPinned, RefreshCw } from "lucide-react"
+import { Camera, Upload, MapPinned, RefreshCw, X } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
@@ -211,16 +212,20 @@ function PitForm({
   onBack: () => void
 }) {
   const reports = useQuery(api.pit.getForTeam, { eventId, teamNumber })
-  const canSkipPhoto = useQuery(api.members.me)?.role === "admin"
+  const me = useQuery(api.members.me)
+  const canSkipPhoto = me?.role === "admin"
   const scoutingClosed = useQuery(api.events.list)?.find(event => event._id === eventId)?.scoutingEnabled === false
-  const save = useMutation(api.pit.save)
-  const generateUploadUrl = useMutation(api.pit.generateUploadUrl)
+  const [photos, setPhotos] = useState<File[]>([])
   const [photoIds, setPhotoIds] = useState<Id<"_storage">[]>([])
-  const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const cameraInput = useRef<HTMLInputElement>(null)
   const uploadInput = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState<PitFormState>(emptyPitForm)
+  const [draftReady, setDraftReady] = useState(false)
+  const [draftError, setDraftError] = useState(false)
+  const draftKey = `pit:${eventId}:${teamNumber}`
+  const draftOwner = me?.tokenIdentifier
+  const initializedDraft = useRef(false)
 
   useEffect(() => {
     const latest = reports?.[0]
@@ -264,34 +269,40 @@ function PitForm({
         bps: latest.bps === undefined ? "" : String(latest.bps),
         notes: latest.notes,
       })
-    } else {
-      setForm(emptyPitForm)
     }
   }, [reports])
+
+  useEffect(() => {
+    if (!draftOwner || reports === undefined || reports.length || initializedDraft.current) return
+    let active = true
+    void readDraft<{ form: PitFormState; photos: File[] }>(draftOwner, draftKey).then(draft => {
+      if (!active) return
+      initializedDraft.current = true
+      if (draft) { setForm(draft.form); setPhotos(draft.photos) }
+      setDraftReady(true)
+    }).catch(() => { if (active) { initializedDraft.current = true; setDraftError(true); setDraftReady(true) } })
+    return () => { active = false }
+  }, [draftOwner, draftKey, reports])
+
+  useEffect(() => {
+    if (!draftReady || !draftOwner || saving) return
+    void writeDraft(draftOwner, draftKey, { form, photos }).catch(() => setDraftError(true))
+  }, [draftReady, draftOwner, draftKey, saving, form, photos])
 
   const setBool = (key: keyof PitFormState, value: boolean) =>
     setForm((current) => ({ ...current, [key]: value }))
 
-  async function uploadPhotos(files: File[]) {
-    if (!files.length || uploading || saving) return
-    if (photoIds.length + files.length > 4) { toast.error("Maximum 4 robot photos"); return }
+  function selectPhotos(files: File[]) {
+    if (!files.length || saving) return
+    if (photoIds.length + photos.length + files.length > 4) { toast.error("Maximum 4 robot photos"); return }
     if (files.some(file => !["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type) || file.size > 10 * 1024 * 1024)) { toast.error("Choose JPG, PNG, WebP or GIF images under 10 MB"); return }
-    setUploading(true)
-    try {
-      for (const file of files) {
-        const url = await generateUploadUrl({})
-        const response = await fetch(url, { method: "POST", headers: { "Content-Type": file.type }, body: file })
-        if (!response.ok) throw new Error("Photo upload failed. Try again.")
-        const { storageId } = await response.json() as { storageId: Id<"_storage"> }
-        setPhotoIds(current => [...current, storageId])
-      }
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Photo upload failed") }
-    finally { setUploading(false) }
+    setPhotos(current => [...current, ...files])
   }
 
   async function onSubmit() {
-    if (uploading || saving) return
-    if (!photoIds.length && !canSkipPhoto) { toast.error("Upload at least one robot photo before submitting"); return }
+    if (saving) return
+    if (!me) { toast.error("Sign in before saving scouting data"); return }
+    if (!photoIds.length && !photos.length && !canSkipPhoto) { toast.error("Upload at least one robot photo before submitting"); return }
     setSaving(true)
     try {
       const bps = form.bps.trim() === "" ? undefined : Number(form.bps)
@@ -324,8 +335,9 @@ function PitForm({
         return
       }
       if (!form.programmingLanguage.trim()) { toast.error("Ask which programming language they use, or enter Unknown"); return }
-      await save({ eventId, teamNumber, ...form, ...scoring, ...measurements, electricalQuality, buildQuality, programmingLanguage: form.programmingLanguage.trim(), bps, photoIds })
-      toast.success(`Saved pit report for ${teamNumber}`)
+      await queueReport(me.tokenIdentifier, { kind: "pit", args: { eventId, teamNumber, ...form, ...scoring, ...measurements, electricalQuality, buildQuality, programmingLanguage: form.programmingLanguage.trim(), bps, photoIds }, photos })
+      toast.success(`Pit report for ${teamNumber} saved on device. Upload pending.`)
+      await deleteDraft(me.tokenIdentifier, draftKey).catch(() => toast.warning("Submitted report is safe, but the old draft could not be cleared."))
       onBack()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Save failed")
@@ -340,8 +352,11 @@ function PitForm({
     </div>
   )
 
+  if (!draftReady) return <p role="status">Loading device draft...</p>
+
   return (
     <div className="grid gap-4">
+      {draftError && <p role="alert" className="text-sm text-destructive">Draft could not be saved on this device. Keep this form open until submission succeeds.</p>}
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">Team {teamNumber}</h2>
@@ -483,29 +498,42 @@ function PitForm({
         </div>
       </FormSection>
       <FormSection title="Robot photos">
-        <p className="text-sm text-muted-foreground">{photoIds.length}/4 photos · {canSkipPhoto ? "Optional for admins" : "At least 1 required"}{photoIds.length > 4 ? " · Remove extra photos before saving" : ""}</p>
+        <p className="text-sm text-muted-foreground">{photoIds.length + photos.length}/4 photos · {canSkipPhoto ? "Optional for admins" : "At least 1 required"}</p>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" disabled={uploading || saving || reports === undefined || photoIds.length >= 4} onClick={() => cameraInput.current?.click()}><Camera />Take photo</Button>
-          <Button type="button" variant="outline" disabled={uploading || saving || reports === undefined || photoIds.length >= 4} onClick={() => uploadInput.current?.click()}><Upload />Upload photos</Button>
+          <Button type="button" variant="outline" disabled={saving || reports === undefined || photoIds.length + photos.length >= 4} onClick={() => cameraInput.current?.click()}><Camera />Take photo</Button>
+          <Button type="button" variant="outline" disabled={saving || reports === undefined || photoIds.length + photos.length >= 4} onClick={() => uploadInput.current?.click()}><Upload />Upload photos</Button>
         </div>
         <input ref={cameraInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif" capture="environment" className="hidden" aria-label="Take robot photo" onChange={event => {
           const files = Array.from(event.target.files ?? [])
           event.target.value = ""
-          void uploadPhotos(files)
+          selectPhotos(files)
         }} />
         <input ref={uploadInput} type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" aria-label="Upload robot photos" onChange={event => {
           const files = Array.from(event.target.files ?? [])
           event.target.value = ""
-          void uploadPhotos(files)
+          selectPhotos(files)
         }} />
-        {uploading && <p role="status" className="text-sm text-muted-foreground">Uploading photos...</p>}
-        <PitPhotos photoIds={photoIds} onRemove={uploading || saving ? undefined : id => setPhotoIds(current => current.filter(photo => photo !== id))} />
+        <PitPhotos photoIds={photoIds} onRemove={saving ? undefined : id => setPhotoIds(current => current.filter(photo => photo !== id))} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{photos.map((photo, index) => <LocalPhoto key={index} photo={photo} disabled={saving} onRemove={() => setPhotos(current => current.filter((_, i) => i !== index))} />)}</div>
       </FormSection>
-      <Button type="button" size="lg" disabled={scoutingClosed || uploading || saving || (!photoIds.length && !canSkipPhoto) || photoIds.length > 4 || reports === undefined} onClick={() => void onSubmit()}>
+      <Button type="button" size="lg" disabled={scoutingClosed || saving || (!photoIds.length && !photos.length && !canSkipPhoto) || photoIds.length + photos.length > 4 || reports === undefined} onClick={() => void onSubmit()}>
         {saving ? "Saving..." : "Submit pit report"}
       </Button>
     </div>
   )
+}
+
+function LocalPhoto({ photo, disabled, onRemove }: { photo: File; disabled: boolean; onRemove: () => void }) {
+  const [url, setUrl] = useState<string>()
+  useEffect(() => {
+    const value = URL.createObjectURL(photo)
+    setUrl(value)
+    return () => URL.revokeObjectURL(value)
+  }, [photo])
+  return <div className="relative min-w-0">
+    <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Selected robot photo" className="aspect-square w-full rounded-md border object-contain" /></a>
+    <Button type="button" size="icon" variant="secondary" disabled={disabled} className="absolute right-1 top-1" aria-label="Remove photo" title="Remove photo" onClick={onRemove}><X /></Button>
+  </div>
 }
 
 function FormSection({ title, children }: { title: string; children: ReactNode }) {

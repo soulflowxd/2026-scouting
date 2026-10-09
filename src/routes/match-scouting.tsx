@@ -1,4 +1,5 @@
 import { useAction, useMutation, useQuery } from "convex/react"
+import { queueReport } from "@/lib/scouting-outbox"
 import { ConvexError } from "convex/values"
 import { Check, Clock3, ListFilter } from "lucide-react"
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
@@ -397,7 +398,6 @@ function MatchForm({
   const [substituteId, setSubstituteId] = useState("")
   const [requestingSub, setRequestingSub] = useState(false)
   const claimRobot = useMutation(api.matchScouting.claimRobot)
-  const saveReport = useMutation(api.matchScouting.saveReport)
   const reportSubmitted = useQuery(api.matchScouting.reportSubmitted, { eventId, matchNumber, teamNumber })
   const draftKey = `scouting:match-draft:${scoutToken}:${eventId}:${matchNumber}:${teamNumber}`
   const [initialDraft] = useState(() => {
@@ -425,6 +425,11 @@ function MatchForm({
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
   const dirty = JSON.stringify(form) !== savedForm
+  useEffect(() => {
+    if (!dirty || saving) return
+    try { localStorage.setItem(draftKey, JSON.stringify(form)) }
+    catch { /* The explicit draft/save controls report storage failures. */ }
+  }, [dirty, saving, draftKey, form])
   function saveDraft() {
     try {
       localStorage.setItem(draftKey, JSON.stringify(form))
@@ -471,19 +476,9 @@ function MatchForm({
     if (savingRef.current) return
     savingRef.current = true
     setSaving(true)
-    const reportedBreakdown = form.tags.includes("Broke down")
-    const breakdownMessage = `Team ${teamNumber} broke down in QM${matchNumber}. Ask the team what failed on the robot.`
-    const breakdownToastId = `breakdown-${eventId}-${matchNumber}-${teamNumber}`
     try {
-      await saveReport({ eventId, matchNumber, teamNumber, ...form })
-      if (reportedBreakdown) {
-        toast.warning(breakdownMessage, {
-          id: breakdownToastId,
-          duration: 10_000,
-        })
-      } else {
-        toast.success(`Saved QM${matchNumber} report for ${teamNumber}`)
-      }
+      await queueReport(scoutToken, { kind: "match", args: { eventId, matchNumber, teamNumber, ...form }, photos: [] })
+      toast.success(`QM${matchNumber} report saved on device. Upload pending.`)
       setForm(emptyMatchForm)
       setSavedForm(JSON.stringify(emptyMatchForm))
       setHasDraft(false)
