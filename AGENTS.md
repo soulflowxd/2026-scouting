@@ -51,6 +51,13 @@ redirects here; keep project guidance here rather than duplicating it.
 
 ## Scouting Behavior
 
+- Pit reports lock a team at that event after submission; match reports lock a
+  team in that specific match. Reject repeat submissions from every role until
+  an approved admin deletes the existing report(s). Admins can delete individual
+  reports from team details even when scouting is closed. Preserve other reports,
+  official results and independent breakdown follow-ups; retract unsupported
+  breakdown alerts when the final reporting match report is removed.
+
 - Admins choose event-specific participants for randomized regular-team scouting
   assignments. Balance all teams across available scouts without a fixed group
   limit. If regular teams overlap in a match, choose one randomly and use free
@@ -95,14 +102,19 @@ redirects here; keep project guidance here rather than duplicating it.
 - Team logos must come from TBA, not local logo overrides. The supplied ITKAN
   image is the app favicon. Team-color accents come from FRC Colors; preserve
   readable card text and neutral fallbacks when branding is unavailable.
-- Pit reports require at least one robot photo, with up to four photos, each no
-  larger than 10 MB. Validate uploaded storage metadata on the backend.
+- Scouts' pit reports require at least one robot photo. Approved admins and the
+  super admin may submit without photos; enforce this exemption on the backend.
+  All uploaded reports allow up to four photos, each no larger than 10 MB.
+  Validate uploaded storage metadata on the backend even for admins.
 - Support phone-camera capture and multiple-file uploads. Preserve existing
   reports without photos, but require a photo when submitting updates.
 - Keep strategy-board robot markers square and paths colored by driver station.
 
 ## Rank Teams And Navigation
 
+- Keep mobile-only UI redesigns behind responsive breakpoints. The pick-list
+  landing page retains its original full-width desktop layout at 768px and up;
+  use the compact landing-page layout only on smaller screens.
 - Rank Teams uses a shared, event-scoped Elo leaderboard from approved scouts'
   votes in Convex. Pick-list cards show the same shared Elo. Do not revert to
   device-only rankings or automatically import old local votes. Scouts may

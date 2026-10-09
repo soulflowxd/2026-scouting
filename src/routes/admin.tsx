@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { PasswordForm } from "@/components/password-form"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { ScoutAssignmentAdmin } from "@/components/scout-assignment-admin"
+import { ScoutingCompletionReport } from "@/components/scouting-completion-report"
 import { useActiveEvent } from "@/lib/active-event"
 
 export function AdminRoute() {
@@ -95,10 +96,14 @@ export function AdminRoute() {
         </div>
       </div>
 
+      {isAdmin && activeEvent && <ScoutingCompletionReport key={activeEvent._id} eventId={activeEvent._id} />}
       {isAdmin && activeEvent && <ScoutAssignmentAdmin eventId={activeEvent._id} />}
+      {isAdmin && activeEvent && <p className="text-xs text-muted-foreground">Approved scouts are included in this event’s match assignments automatically. Uncheck a scout below to exclude them from this event; active claims still require a confirmed handoff.</p>}
       <label className="relative block max-w-md">
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
         <Input
+          type="search"
+          aria-label="Search accounts"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search by name or email"

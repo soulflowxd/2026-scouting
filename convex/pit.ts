@@ -1,5 +1,5 @@
 import { mutation, query } from "./_generated/server"
-import { requireApprovedUserFromDb } from "./lib/authz"
+import { requireAdminFromDb, requireApprovedUserFromDb } from "./lib/authz"
 import { requireScoutingOpen } from "./lib/scoutingAccess"
 import { pitReportInputValidator } from "./validators"
 import { ConvexError, v } from "convex/values"
@@ -24,6 +24,19 @@ export const photoUrls = query({
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.trunc(value)))
 }
+
+export const remove = mutation({
+  args: { reportId: v.id("pitReports") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requireAdminFromDb(ctx)
+    const report = await ctx.db.get(args.reportId)
+    if (!report) throw new ConvexError("Pit report not found")
+    // Preserve storage files: another report may reference the same photo.
+    await ctx.db.delete(report._id)
+    return null
+  },
+})
 
 export const getForTeam = query({
   args: {
@@ -50,9 +63,10 @@ export const save = mutation({
     }
     if (args.programmingLanguage !== undefined && (!args.programmingLanguage.trim() || args.programmingLanguage.length > 100)) throw new ConvexError("Enter a programming language (or Unknown), up to 100 characters")
     if (args.allianceRole !== undefined && args.allianceRole.length > 200) throw new ConvexError("Keep alliance role under 200 characters")
-    if (!args.photoIds?.length) throw new ConvexError("Upload at least one robot photo before submitting")
-    if (args.photoIds.length > 4) throw new ConvexError("Maximum 4 robot photos")
-    for (const id of args.photoIds) {
+    const canSkipPhoto = user.role === "admin" || user.role === "superAdmin"
+    if (!args.photoIds?.length && !canSkipPhoto) throw new ConvexError("Upload at least one robot photo before submitting")
+    if ((args.photoIds?.length ?? 0) > 4) throw new ConvexError("Maximum 4 robot photos")
+    for (const id of args.photoIds ?? []) {
       const photo = await ctx.db.system.get(id)
       if (!photo || !["image/jpeg", "image/png", "image/webp", "image/gif"].includes(photo.contentType ?? "") || photo.size > 10 * 1024 * 1024) {
         throw new ConvexError("Robot photos must be JPG, PNG, WebP or GIF images under 10 MB")
@@ -77,10 +91,8 @@ export const save = mutation({
       .withIndex("by_eventId_and_teamNumber", (q) =>
         q.eq("eventId", args.eventId).eq("teamNumber", args.teamNumber),
       )
-      .take(20)
-    const mine = existing.find(
-      (report) => report.scoutToken === user.tokenIdentifier,
-    )
+      .first()
+    if (existing) throw new ConvexError("Pit report already submitted. An admin must delete it before scouting this team again.")
     const doc = {
       ...args,
       programmingLanguage: args.programmingLanguage?.trim(),
@@ -90,10 +102,6 @@ export const save = mutation({
       preloadCount,
       scoutToken: user.tokenIdentifier,
       updatedAt: Date.now(),
-    }
-    if (mine) {
-      await ctx.db.patch(mine._id, doc)
-      return mine._id
     }
     return await ctx.db.insert("pitReports", doc)
   },

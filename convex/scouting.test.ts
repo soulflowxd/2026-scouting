@@ -109,6 +109,43 @@ async function seedEvent() {
 }
 
 describe("scouting backend", () => {
+  test.each([undefined, []])("match reports can be submitted without an auto drawing (%j)", async autoPath => {
+    const { t, eventId } = await seedEvent()
+    const scout = await approvedScout(t, "path@example.com", "path-scout")
+    await scout.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: 1,
+      autoFuel: 0, teleopFuel: 0, autoClimb: "none", autoNotes: "", autoPath,
+      teleopNotes: "", endgameClimb: "none", endgameNotes: "",
+      driverRating: 5, defenseRating: 5, tags: [] })
+    const detail = await scout.query(api.teams.detail, { eventId, teamNumber: 1 })
+    expect(detail?.matchReports).toHaveLength(1)
+    expect(detail?.matchReports[0].autoPath).toEqual(autoPath)
+  })
+
+  test("provided auto drawings are bounded and preserved in team details", async () => {
+    const { t, eventId } = await seedEvent()
+    const scout = await approvedScout(t, "path@example.com", "path-scout")
+    const report = { eventId, matchNumber: 1, teamNumber: 1,
+      autoFuel: 0, teleopFuel: 0, autoClimb: "none" as const, autoNotes: "",
+      teleopNotes: "", endgameClimb: "none" as const, endgameNotes: "",
+      driverRating: 5, defenseRating: 5, tags: [] }
+    for (const autoPath of [
+      [[{ x: -1, y: 20 }]], [[{ x: 1001, y: 20 }]], [[{ x: 20, y: 501 }]],
+      [[{ x: NaN, y: 20 }]], [[{ x: 20, y: Infinity }]],
+      Array.from({ length: 201 }, () => [{ x: 1, y: 1 }]),
+      [Array.from({ length: 2001 }, () => ({ x: 1, y: 1 }))],
+      [[]], [[], [{ x: 1, y: 1 }]],
+    ]) {
+      await expect(scout.mutation(api.matchScouting.saveReport, { ...report, autoPath })).rejects.toThrow("Observed auto path is invalid")
+    }
+    const autoPath = [[{ x: 0, y: 0 }, { x: 1000, y: 500 }]]
+    await scout.mutation(api.matchScouting.saveReport, { ...report, autoPath })
+    const detail = await scout.query(api.teams.detail, { eventId, teamNumber: 1 })
+    expect(detail?.matchReports[0].autoPath).toEqual(autoPath)
+    // A stationary robot is recorded honestly with its starting position.
+    await scout.mutation(api.matchScouting.releaseClaim, { claimId: (await scout.query(api.matchScouting.claimsForMatch, { eventId, matchNumber: 1 }))[0]._id })
+    await scout.mutation(api.matchScouting.saveReport, { ...report, teamNumber: 2, autoPath: [[{ x: 100, y: 200 }]] })
+  })
+
   test("notifications are empty when signed out and private to their recipient", async () => {
     const { t, eventId } = await seedEvent()
     await t.run(async (ctx) => {
@@ -120,7 +157,7 @@ describe("scouting backend", () => {
     expect(await a.query(api.notifications.mine, {})).toHaveLength(1)
     expect(await b.query(api.notifications.mine, {})).toEqual([])
   })
-  test("pit configuration saves, updates and validates BPS", async () => {
+  test("pit configuration saves once and validates BPS", async () => {
     const { t, eventId } = await seedEvent()
     const scout = await approvedScout(t, "a@example.com", "scout-a")
     const photoId = await t.run(async ctx => {
@@ -143,20 +180,20 @@ describe("scouting backend", () => {
       autoPath: [[{ x: 10, y: 20 }, { x: 900, y: 450 }]],
     }
     const id = await scout.mutation(api.pit.save, report)
-    await scout.mutation(api.pit.save, { ...report, allianceRole: " Primary scorer / defense " })
-    expect((await scout.query(api.pit.getForTeam, { eventId, teamNumber: 1 }))[0].allianceRole).toBe("Primary scorer / defense")
+    await scout.mutation(api.pit.save, { ...report, teamNumber: 2, allianceRole: " Primary scorer / defense " })
+    expect((await scout.query(api.pit.getForTeam, { eventId, teamNumber: 2 }))[0].allianceRole).toBe("Primary scorer / defense")
     await expect(scout.mutation(api.pit.save, { ...report, allianceRole: "x".repeat(201) })).rejects.toThrow("200 characters")
     await expect(scout.mutation(api.pit.save, { ...report, electricalQuality: 0 })).rejects.toThrow("1 to 10")
     await expect(scout.mutation(api.pit.save, { ...report, buildQuality: 10.5 })).rejects.toThrow("1 to 10")
     await expect(scout.mutation(api.pit.save, { ...report, programmingLanguage: " " })).rejects.toThrow("programming language")
-    await scout.mutation(api.pit.save, { ...report, electricalQuality: 8, buildQuality: 9, programmingLanguage: " Java " })
-    expect((await scout.query(api.pit.getForTeam, { eventId: report.eventId, teamNumber: report.teamNumber }))[0]).toMatchObject({ electricalQuality: 8, buildQuality: 9, programmingLanguage: "Java" })
+    await scout.mutation(api.pit.save, { ...report, teamNumber: 3, electricalQuality: 8, buildQuality: 9, programmingLanguage: " Java " })
+    expect((await scout.query(api.pit.getForTeam, { eventId: report.eventId, teamNumber: 3 }))[0]).toMatchObject({ electricalQuality: 8, buildQuality: 9, programmingLanguage: "Java" })
     await expect(scout.mutation(api.pit.save, { ...report, photoIds: [] })).rejects.toThrow("at least one robot photo")
     await expect(scout.mutation(api.pit.save, { ...report, photoIds: undefined })).rejects.toThrow("at least one robot photo")
     const invalidPhoto = await t.run(async ctx => await ctx.storage.store(new Blob(["not an image"], { type: "text/plain" })))
     await expect(scout.mutation(api.pit.save, { ...report, photoIds: [invalidPhoto] })).rejects.toThrow("images under 10 MB")
-    await scout.mutation(api.pit.save, { ...report, photoIds: Array(4).fill(photoId) })
-    await scout.mutation(api.pit.save, report)
+    await scout.mutation(api.pit.save, { ...report, teamNumber: 4, photoIds: Array(4).fill(photoId) })
+    await expect(scout.mutation(api.pit.save, report)).rejects.toThrow("already submitted")
     await expect(scout.mutation(api.pit.save, { ...report, photoIds: Array(5).fill(photoId) })).rejects.toThrow("Maximum 4")
     expect((await scout.query(api.pit.getForTeam, { eventId, teamNumber: 1 }))[0]).toMatchObject(report)
     await expect(scout.mutation(api.pit.save, { ...report, bps: -1 })).rejects.toThrow("BPS")
@@ -165,8 +202,9 @@ describe("scouting backend", () => {
     await expect(scout.mutation(api.pit.save, { ...report, fuelCapacity: 1.5 })).rejects.toThrow("whole number")
     await expect(scout.mutation(api.pit.save, { ...report, autoScore: -1 })).rejects.toThrow("non-negative")
     await expect(scout.mutation(api.pit.save, { ...report, autoPath: [[{ x: 1001, y: 20 }]] })).rejects.toThrow("Invalid auto path")
-    expect(await scout.mutation(api.pit.save, { ...report, drivetrain: "Tank", bps: 0 })).toBe(id)
-    expect((await scout.query(api.pit.getForTeam, { eventId, teamNumber: 1 }))[0]).toMatchObject({ swerveType: "", tread: "", bps: 0 })
+    expect(id).toBeTruthy()
+    await scout.mutation(api.pit.save, { ...report, teamNumber: 5, drivetrain: "Tank", bps: 0 })
+    expect((await scout.query(api.pit.getForTeam, { eventId, teamNumber: 5 }))[0]).toMatchObject({ swerveType: "", tread: "", bps: 0 })
   })
   test("xP scope selects independent ratings in team lists and profiles", async () => {
     const { t, eventId } = await seedEvent()
@@ -329,6 +367,7 @@ describe("scouting backend", () => {
       autoFuel: 1,
       autoClimb: "none" as const,
       autoNotes: "",
+      autoPath: [[{ x: 100, y: 200 }, { x: 400, y: 200 }]],
       teleopFuel: 2,
       teleopNotes: "Stopped moving",
       endgameClimb: "none" as const,
@@ -344,7 +383,7 @@ describe("scouting backend", () => {
       autoCycles: 2, teleopCyclesPerShift: 3, endgameCycles: 1, offShiftActivity: "  Collect fuel and defend  " }
     await expect(scoutA.mutation(api.matchScouting.saveReport, { ...cycleReport, autoCycles: 1.5 })).rejects.toThrow("whole-number cycle counts")
     await expect(scoutA.mutation(api.matchScouting.saveReport, { ...cycleReport, offShiftActivity: " " })).rejects.toThrow("off-shift")
-    await scoutA.mutation(api.matchScouting.saveReport, cycleReport)
+    const cycleReportId = await scoutA.mutation(api.matchScouting.saveReport, cycleReport)
     const cycleDetail = await scoutA.query(api.teams.detail, { eventId, teamNumber: 1 })
     expect(cycleDetail?.averages).toMatchObject({ autoCycles: 2, teleopCyclesPerShift: 3, endgameCycles: 1 })
     expect(cycleDetail?.matchReports[0].offShiftActivity).toBe("Collect fuel and defend")
@@ -355,6 +394,8 @@ describe("scouting backend", () => {
     await expect(scoutA.mutation(api.matchScouting.saveReport, { ...shiftedReport, shift2Cycles: -1 })).rejects.toThrow("whole-number cycle counts")
     await expect(scoutA.mutation(api.matchScouting.saveReport, { ...shiftedReport, shift3Cycles: undefined })).rejects.toThrow("whole-number cycle counts")
     await expect(scoutA.mutation(api.matchScouting.saveReport, { ...shiftedReport, transitionActivity: " " })).rejects.toThrow("transition")
+    await expect(scoutA.mutation(api.matchScouting.saveReport, shiftedReport)).rejects.toThrow("already submitted")
+    await admin.mutation(api.matchScouting.removeReport, { reportId: cycleReportId })
     await scoutA.mutation(api.matchScouting.saveReport, shiftedReport)
     const shiftedDetail = await scoutA.query(api.teams.detail, { eventId, teamNumber: 1 })
     expect(shiftedDetail?.averages).toMatchObject({ shift1Cycles: 1, shift2Cycles: 2, shift3Cycles: 3 })

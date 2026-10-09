@@ -30,6 +30,7 @@ export function Stepper({
           type="button"
           variant="outline"
           size="icon-lg"
+          disabled={value <= min}
           onClick={() => setValue(value - 1)}
         >
           <Minus aria-hidden="true" />
@@ -37,6 +38,10 @@ export function Stepper({
         </Button>
         <Input
           id={id}
+          type="number"
+          min={min}
+          max={max}
+          step={1}
           inputMode="numeric"
           value={value}
           onChange={(event) => setValue(Number(event.target.value) || 0)}
@@ -46,6 +51,7 @@ export function Stepper({
           type="button"
           variant="outline"
           size="icon-lg"
+          disabled={value >= max}
           onClick={() => setValue(value + 1)}
         >
           <Plus aria-hidden="true" />

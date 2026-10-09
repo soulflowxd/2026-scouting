@@ -20,6 +20,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
@@ -54,7 +56,7 @@ function NavItems({
   const items =
     role === "admin" || role === "superAdmin"
       ? [...navItems, { to: "/admin", label: "Admin" }]
-      : navItems
+      : navItems.filter(item => item.to !== "/event")
   return (
     <>
       {items.filter(item => !compact || !["/event", "/account", "/admin"].includes(item.to)).map((item) => (
@@ -78,7 +80,7 @@ function NavItems({
 export function RootRoute() {
   const [menuOpen, setMenuOpen] = useState(false)
   const navigate = useNavigate()
-  const { setTheme } = useTheme()
+  const { theme, setTheme } = useTheme()
   const { signOut } = useAuthActions()
   const me = useQuery(api.members.me)
   const acknowledgeApproval = useMutation(api.members.acknowledgeApproval)
@@ -142,8 +144,9 @@ export function RootRoute() {
 
   return (
     <div className="min-h-svh bg-background text-foreground">
-      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-3 sm:px-4">
+      <a href="#main-content" className="sr-only z-50 rounded-lg bg-primary px-4 py-3 text-primary-foreground focus:not-sr-only focus:fixed focus:left-4 focus:top-4">Skip to content</a>
+      <header className="sticky top-0 z-40 border-b bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur">
+        <div className="mx-auto flex min-h-14 max-w-7xl items-center gap-3 pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] sm:px-4">
           <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
             <SheetTrigger render={<Button variant="ghost" size="icon" className="xl:hidden" />}>
               <Menu aria-hidden="true" />
@@ -153,7 +156,7 @@ export function RootRoute() {
               <SheetHeader>
                 <SheetTitle>2026 Scouting</SheetTitle>
               </SheetHeader>
-              <nav className="grid gap-1 px-3">
+              <nav aria-label="Main navigation" className="grid gap-1 px-3 pb-4">
                 <NavItems role={me?.role} onNavigate={() => setMenuOpen(false)} />
               </nav>
             </SheetContent>
@@ -165,7 +168,7 @@ export function RootRoute() {
             </p>
           </div>
           <Separator orientation="vertical" className="hidden h-5 md:block" />
-          <nav className="hidden min-w-0 items-center gap-1 overflow-x-auto xl:flex">
+          <nav aria-label="Main navigation" className="hidden min-w-0 items-center gap-1 overflow-x-auto xl:flex">
             <NavItems role={me?.role} compact />
           </nav>
           <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -258,22 +261,24 @@ export function RootRoute() {
               <DropdownMenuContent align="end" className="w-52">
                 <p className="px-2 py-2 text-xs text-muted-foreground">{me?.isSuperAdmin ? "Super admin" : me?.role === "admin" ? "Admin" : "Scout"}</p>
                 <DropdownMenuItem onClick={() => navigate("/account")}>Account</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate("/event")}>Event setup</DropdownMenuItem>
+                {me?.role === "admin" && <DropdownMenuItem onClick={() => navigate("/event")}>Event setup</DropdownMenuItem>}
                 {me?.role === "admin" && <DropdownMenuItem onClick={() => navigate("/admin")}>Administration</DropdownMenuItem>}
                 <Separator className="my-1" />
                 <p className="px-2 py-1 text-xs text-muted-foreground">Appearance</p>
-                <DropdownMenuItem onClick={() => setTheme("light")}>
+                <DropdownMenuRadioGroup value={theme ?? "system"} onValueChange={setTheme}>
+                <DropdownMenuRadioItem value="light">
                   <Sun aria-hidden="true" />
                   Light
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme("dark")}>
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="dark">
                   <Moon aria-hidden="true" />
                   Dark
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme("system")}>
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="system">
                   <MonitorCog aria-hidden="true" />
                   System
-                </DropdownMenuItem>
+                </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
                 <Separator className="my-1" />
                 <DropdownMenuItem onClick={() => {
                   void disconnectDeviceNotifications(removeDevice).then(() => signOut()).catch(() => toast.error("Couldn't disconnect device alerts. Please try signing out again."))
@@ -294,7 +299,7 @@ export function RootRoute() {
           )}
         </DialogContent>
       </Dialog>
-      <main className="mx-auto w-full min-w-0 max-w-7xl px-3 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-4 sm:py-6">
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full min-w-0 max-w-7xl py-4 pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] outline-none sm:px-4 sm:py-6">
         {activeEvent?.scoutingEnabled === false && <p role="status" className="mb-4 rounded-lg border bg-muted px-4 py-3 text-sm">Scouting submissions are closed for this event. An admin can enable them in Event setup. Existing data remains viewable.</p>}
         <ScoutHandoffs />
         <Outlet />

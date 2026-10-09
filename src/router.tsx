@@ -1,10 +1,12 @@
 import { createBrowserRouter } from "react-router"
 import { RootRoute } from "@/routes/root"
+import { RouteError } from "@/routes/route-error"
 
 export const router = createBrowserRouter([
   {
     path: "/",
     element: <RootRoute />,
+    errorElement: <RouteError />,
     children: [
       { path: "*", lazy: async () => ({ Component: (await import("@/routes/not-found")).NotFoundRoute }) },
       { path: "team-mash", lazy: async () => ({ Component: (await import("@/routes/team-mash")).TeamMashRoute }) },

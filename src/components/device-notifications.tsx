@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
-import { useConvexAuth, useMutation, useQuery } from "convex/react"
+import { useConvex, useConvexAuth, useMutation, useQuery } from "convex/react"
 import { ConvexError } from "convex/values"
 import { api } from "../../convex/_generated/api"
 import { Button } from "@/components/ui/button"
@@ -42,9 +42,9 @@ function applicationKey(value: string) {
 
 export function DeviceNotificationsProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useConvexAuth()
+  const convex = useConvex()
   const me = useQuery(api.members.me, isAuthenticated ? {} : "skip")
-  const canRegister = me?.approvalStatus === "approved" || me?.approvalStatus === "pending"
-  const publicKey = useQuery(api.pushSubscriptions.publicKey)
+  const canRegister = isAuthenticated && (me?.approvalStatus === "approved" || me?.approvalStatus === "pending")
   const save = useMutation(api.pushSubscriptions.save)
   const remove = useMutation(api.pushSubscriptions.remove)
   const [enabled, setEnabled] = useState(false)
@@ -60,8 +60,12 @@ export function DeviceNotificationsProvider({ children }: { children: ReactNode 
       await navigator.serviceWorker.register("/sw.js")
       const registration = await navigator.serviceWorker.ready
       let subscription = await registration.pushManager.getSubscription()
-      if (!subscription && Notification.permission === "granted" && publicKey) {
-        subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationKey(publicKey) })
+      if (!subscription && Notification.permission === "granted") {
+        // Keep optional notification failures out of React's render path.
+        // This endpoint requires an authenticated, eligible account.
+        const publicKey = await convex.query(api.pushSubscriptions.publicKey, {})
+        if (cancelled) return
+        if (publicKey) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationKey(publicKey) })
       }
       if (!subscription) return
       const json = subscription.toJSON()
@@ -74,7 +78,7 @@ export function DeviceNotificationsProvider({ children }: { children: ReactNode 
     }
     void restore().catch(error => { if (!cancelled) setMessage(notificationError(error)) })
     return () => { cancelled = true }
-  }, [publicKey, save, supported, canRegister, me?.tokenIdentifier])
+  }, [convex, save, supported, canRegister, me?.tokenIdentifier])
 
   function dismissPrompt() {
     try { sessionStorage.setItem(promptStorageKey, "done") } catch { /* The prompt can still be dismissed without storage. */ }
@@ -93,6 +97,7 @@ export function DeviceNotificationsProvider({ children }: { children: ReactNode 
       const permission = await Notification.requestPermission()
       if (permission !== "granted") { setMessage("Allow notifications in your browser's site settings to receive device alerts."); return }
       if (!canRegister) { dismissPrompt(); return }
+      const publicKey = await convex.query(api.pushSubscriptions.publicKey, {})
       if (!publicKey) { setMessage("Device notifications are being set up. Please try again shortly."); return }
       await navigator.serviceWorker.register("/sw.js")
       const registration = await navigator.serviceWorker.ready
@@ -116,7 +121,7 @@ export function DeviceNotificationsProvider({ children }: { children: ReactNode 
   }
 
   return (
-    <DeviceContext.Provider value={{ enabled, busy, supported, loading: publicKey === undefined, message, toggle }}>
+    <DeviceContext.Provider value={{ enabled, busy, supported, loading: isAuthenticated && me === undefined, message, toggle }}>
       {children}
       <Dialog open={promptOpen} onOpenChange={(open) => { if (!open && !busy) dismissPrompt() }}>
         <DialogContent showCloseButton={!busy}>

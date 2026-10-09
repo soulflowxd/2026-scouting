@@ -9,6 +9,7 @@ import {
 import { matchReportInputValidator } from "./validators"
 import { reportResult } from "./lib/tbaMatchResult"
 import { requireAssignedTeam } from "./lib/scoutAssignmentAccess"
+import { ensureCompletionReview } from "./lib/scoutingCompletion"
 
 const tagAllowlist = new Set([
   "Fast",
@@ -22,9 +23,54 @@ const tagAllowlist = new Set([
   "Strong climber",
 ])
 
+export const removeReport = mutation({
+  args: { reportId: v.id("matchReports") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requireAdminFromDb(ctx)
+    const report = await ctx.db.get(args.reportId)
+    if (!report) throw new ConvexError("Match report not found")
+    await ctx.db.delete(report._id)
+    for await (const claim of ctx.db.query("matchRobotClaims")
+      .withIndex("by_eventId_and_matchNumber_and_teamNumber_and_status", q => q.eq("eventId", report.eventId).eq("matchNumber", report.matchNumber).eq("teamNumber", report.teamNumber).eq("status", "active"))) {
+      await ctx.db.patch(claim._id, { status: "released", releasedAt: Date.now(), substituteToken: undefined, substituteName: undefined, breakRequestedAt: undefined, substituteAcceptedAt: undefined })
+    }
+    if (report.tags.includes("Broke down")) {
+      let stillReported = false
+      for await (const other of ctx.db.query("matchReports")
+        .withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", report.eventId).eq("matchNumber", report.matchNumber))) {
+        if (other.teamNumber === report.teamNumber && other.tags.includes("Broke down")) {
+          stillReported = true
+          break
+        }
+      }
+      if (!stillReported) {
+        // Retract unsupported alerts, but retain independently recorded pit follow-ups.
+        for await (const alert of ctx.db.query("scoutNotifications")
+          .withIndex("by_eventId_and_matchNumber_and_teamNumber", q => q.eq("eventId", report.eventId).eq("matchNumber", report.matchNumber).eq("teamNumber", report.teamNumber))) {
+          await ctx.db.delete(alert._id)
+        }
+      }
+    }
+    return null
+  },
+})
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.trunc(value)))
 }
+
+export const reportSubmitted = query({
+  args: { eventId: v.id("events"), matchNumber: v.number(), teamNumber: v.number() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    await requireApprovedUserFromDb(ctx)
+    for await (const report of ctx.db.query("matchReports").withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", args.eventId).eq("matchNumber", args.matchNumber))) {
+      if (report.teamNumber === args.teamNumber) return true
+    }
+    return false
+  },
+})
 
 export const matchesForEvent = query({
   args: { eventId: v.id("events") },
@@ -68,6 +114,9 @@ export const claimRobot = mutation({
   handler: async (ctx, args) => {
     const user = await requireApprovedUserFromDb(ctx)
     await requireScoutingOpen(ctx, args.eventId)
+    for await (const report of ctx.db.query("matchReports").withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", args.eventId).eq("matchNumber", args.matchNumber))) {
+      if (report.teamNumber === args.teamNumber) throw new ConvexError("Match report already submitted. An admin must delete it before scouting this robot again.")
+    }
     const activeForRobot = await ctx.db
       .query("matchRobotClaims")
       .withIndex("by_eventId_and_matchNumber_and_teamNumber_and_status", (q) =>
@@ -296,19 +345,17 @@ export const saveReport = mutation({
           q
             .eq("eventId", args.eventId)
             .eq("matchNumber", args.matchNumber)
-            .eq("teamNumber", args.teamNumber)
-            .eq("scoutToken", user.tokenIdentifier),
+            .eq("teamNumber", args.teamNumber),
       )
       .order("desc").first()
 
-    let reportId
-    if (match) await ctx.scheduler.runAfter(0, internal.tbaMatches.refreshAfterReport, { eventId: args.eventId, matchNumber: args.matchNumber, attempt: 0 })
-    if (existing) {
-      await ctx.db.patch(existing._id, doc)
-      reportId = existing._id
-    } else {
-      reportId = await ctx.db.insert("matchReports", doc)
+    if (existing) throw new ConvexError("Match report already submitted. An admin must delete it before scouting this robot again.")
+    if (args.autoPath && (args.autoPath.length > 200 || args.autoPath.reduce((count, path) => count + path.length, 0) > 2000 || args.autoPath.some(path => !path.length || path.some(({ x, y }) => !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1000 || y < 0 || y > 500)))) {
+      throw new ConvexError("Observed auto path is invalid or too large")
     }
+    if (match) await ctx.scheduler.runAfter(0, internal.tbaMatches.refreshAfterReport, { eventId: args.eventId, matchNumber: args.matchNumber, attempt: 0 })
+    const reportId = await ctx.db.insert("matchReports", doc)
+    if (match) await ensureCompletionReview(ctx, match)
 
     if (tags.includes("Broke down")) {
       const members = (await ctx.db.query("members").take(500)).filter(

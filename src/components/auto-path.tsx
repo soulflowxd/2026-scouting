@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type PointerEvent, type ReactNode } from "react"
 import { Maximize2, Minimize2, Pencil, Route, Undo2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 
 export type PathPoint = { x: number; y: number }
 export function AutoPath({ value, onChange, readOnly = false, color = "#7e22ce", layers = [], markers = [], onPlace, fullscreenControls }: {
@@ -15,6 +15,8 @@ export function AutoPath({ value, onChange, readOnly = false, color = "#7e22ce",
   const [fullscreen, setFullscreen] = useState(false)
   const [mode, setMode] = useState<"line" | "points">("line")
   const carpetFilter = useId()
+  const keyboardHelp = useId()
+  const [keyboardPoint, setKeyboardPoint] = useState<PathPoint>({ x: 500, y: 250 })
   const drawing = useRef(false)
   const current = useRef(value)
   useEffect(() => {
@@ -25,10 +27,10 @@ export function AutoPath({ value, onChange, readOnly = false, color = "#7e22ce",
     const rect = event.currentTarget.getBoundingClientRect()
     return { x: Math.round(Math.max(0, Math.min(1000, (event.clientX - rect.left) / rect.width * 1000))), y: Math.round(Math.max(0, Math.min(500, (event.clientY - rect.top) / rect.height * 500))) }
   }
-  const content = <div className={fullscreen ? "flex h-full min-h-0 min-w-0 flex-col gap-2" : "grid min-w-0 gap-2"}>
-    {fullscreen ? <DialogHeader className="shrink-0 flex-row items-center justify-between"><DialogTitle>Field view</DialogTitle><Button type="button" variant="outline" onClick={() => setFullscreen(false)}><Minimize2 aria-hidden="true" />Exit full screen</Button></DialogHeader> : <div className="flex justify-end"><Button type="button" variant="outline" size="sm" onClick={() => setFullscreen(true)}><Maximize2 aria-hidden="true" />Full screen</Button></div>}
-    {fullscreen && fullscreenControls}
-    {!readOnly && <div className="flex flex-wrap gap-2">
+  const content = <div className={fullscreen ? "relative h-full min-h-0 min-w-0" : "grid min-w-0 gap-2"}>
+    {fullscreen && <DialogTitle className="sr-only">Field view</DialogTitle>}
+    <div className={fullscreen ? "absolute top-2 left-2 z-10 flex w-fit max-w-[calc(100%-1rem)] flex-wrap items-center gap-1.5 rounded-lg border bg-background/95 p-1 shadow-md [&_button]:min-h-11 [&_button]:min-w-11" : "flex flex-wrap items-center gap-1.5 [&_button]:min-h-11 [&_button]:min-w-11"}>
+    {!readOnly && <>
       <div className="flex gap-1" role="group" aria-label="Drawing mode">
         <Button type="button" variant={mode === "line" ? "default" : "outline"} aria-pressed={mode === "line"} onClick={() => setMode("line")}><Pencil />Line</Button>
         <Button type="button" variant={mode === "points" ? "default" : "outline"} aria-pressed={mode === "points"} onClick={() => setMode("points")}><Route />Points</Button>
@@ -38,9 +40,28 @@ export function AutoPath({ value, onChange, readOnly = false, color = "#7e22ce",
         update(mode === "points" && last.length > 1 ? [...value.slice(0, -1), last.slice(0, -1)] : value.slice(0, -1))
       }}><Undo2 /></Button>
       <Button type="button" variant="outline" size="icon" title="Clear path" aria-label="Clear path" disabled={!value.length} onClick={() => update([])}><Trash2 /></Button>
-    </div>}
-    <div className={fullscreen ? "grid min-h-0 flex-1 place-items-center [container-type:size]" : "min-w-0"}>
-    <svg viewBox="0 0 1000 500" aria-label="Auto path drawing area" className={`block aspect-[2/1] ${fullscreen ? "w-[min(100cqw,200cqh)]" : "w-full"} rounded-md border bg-background ${readOnly ? "" : "touch-none cursor-crosshair"}`}
+    </>}
+      <Button type="button" variant="outline" size="icon" title={fullscreen ? "Exit full screen" : "Full screen"} aria-label={fullscreen ? "Exit full screen" : "Full screen"} onClick={() => setFullscreen(!fullscreen)}>
+        {fullscreen ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
+      </Button>
+    </div>
+    {fullscreen && fullscreenControls && <div className="absolute bottom-7 left-2 right-2 z-10 max-h-[35%] overflow-auto rounded-lg bg-background/95 p-2 shadow-sm">{fullscreenControls}</div>}
+    <div className={fullscreen ? "grid h-full min-h-0 place-items-center [container-type:size]" : "min-w-0"}>
+    <svg viewBox="0 0 1000 500" role="group" tabIndex={readOnly ? undefined : 0} aria-label="Auto path drawing area" aria-describedby={readOnly ? undefined : keyboardHelp} className={`group/field block aspect-[2/1] ${fullscreen ? "w-[min(100cqw,200cqh)] rounded-none" : "w-full rounded-md"} border bg-background ${readOnly ? "" : "touch-none cursor-crosshair"}`}
+      onKeyDown={event => {
+        if (readOnly) return
+        const delta = event.shiftKey ? 50 : 10
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+          event.preventDefault()
+          setKeyboardPoint(p => ({ x: Math.max(0, Math.min(1000, p.x + (event.key === "ArrowLeft" ? -delta : event.key === "ArrowRight" ? delta : 0))), y: Math.max(0, Math.min(500, p.y + (event.key === "ArrowUp" ? -delta : event.key === "ArrowDown" ? delta : 0))) }))
+        } else if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          if (onPlace) { onPlace(keyboardPoint); return }
+          const paths = current.current
+          if (paths.reduce((sum, path) => sum + path.length, 0) >= 2000) return
+          update(paths.length ? [...paths.slice(0, -1), [...paths[paths.length - 1], keyboardPoint]] : [[keyboardPoint]])
+        }
+      }}
       onPointerDown={(event) => {
         if (readOnly || event.button !== 0 || current.current.reduce((sum, path) => sum + path.length, 0) >= 2000) return
         if (onPlace) { onPlace(point(event)); return }
@@ -83,12 +104,17 @@ export function AutoPath({ value, onChange, readOnly = false, color = "#7e22ce",
         <rect x={-24} y={-24} width={48} height={48} rx={4} fill={marker.color} stroke="white" strokeWidth={3} />
         <text textAnchor="middle" dominantBaseline="middle" fill="white" fontSize={13} fontWeight={700}>{marker.label}</text>
       </g>)}
+      {!readOnly && <g className="pointer-events-none opacity-0 group-focus-visible/field:opacity-100" aria-hidden="true">
+        <circle cx={keyboardPoint.x} cy={keyboardPoint.y} r={12} fill="none" stroke="white" strokeWidth={5} />
+        <circle cx={keyboardPoint.x} cy={keyboardPoint.y} r={12} fill="none" stroke="black" strokeWidth={2} />
+      </g>}
     </svg>
     </div>
-    <a href="https://www.chiefdelphi.com/t/2026-strategy-board-field-images/514729" target="_blank" rel="noreferrer" className="text-xs text-muted-foreground underline underline-offset-4">REBUILT field image by _AD</a>
+    {!readOnly && <p id={keyboardHelp} className="sr-only">Use arrow keys to move the drawing cursor, Shift and arrows for larger steps, and Enter or Space to add a point or place the selected robot. Use Undo or Clear to remove points.</p>}
+    <a href="https://www.chiefdelphi.com/t/2026-strategy-board-field-images/514729" target="_blank" rel="noreferrer" className={`${fullscreen ? "absolute bottom-1 left-2 rounded bg-background/90 px-1 text-[10px]" : "text-xs"} text-muted-foreground underline underline-offset-4`}>REBUILT field image by _AD</a>
   </div>
   return fullscreen ? <Dialog open={fullscreen} onOpenChange={setFullscreen}>
-    <DialogContent showCloseButton={false} aria-describedby={undefined} className="inset-0 top-0 left-0 h-dvh w-screen max-w-none translate-x-0 translate-y-0 rounded-none p-3 pt-[max(.75rem,env(safe-area-inset-top))] pb-[max(.75rem,env(safe-area-inset-bottom))] sm:max-w-none">
+    <DialogContent showCloseButton={false} aria-describedby={undefined} className="inset-0 top-0 left-0 block h-dvh max-h-none w-screen max-w-none translate-x-0 translate-y-0 overflow-hidden rounded-none border-0 p-0 pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] sm:max-w-none">
       {content}
     </DialogContent>
   </Dialog> : content

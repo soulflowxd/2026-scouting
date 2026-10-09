@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "convex/react"
 import { toast } from "sonner"
-import { Search } from "lucide-react"
+import { Search, Trash2 } from "lucide-react"
 import { useMemo, useState } from "react"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
@@ -72,6 +72,8 @@ export function TeamsRoute() {
         <label className="relative">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            type="search"
+            aria-label="Search teams"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search teams"
@@ -127,6 +129,7 @@ export function TeamsRoute() {
             type="button"
             size="sm"
             variant={sortBy === option.value ? "default" : "outline"}
+            aria-pressed={sortBy === option.value}
             onClick={() => setSortBy(option.value)}
           >
             {option.label}
@@ -139,6 +142,7 @@ export function TeamsRoute() {
             type="button"
             size="sm"
             variant={sortDirection === option.value ? "default" : "outline"}
+            aria-pressed={sortDirection === option.value}
             onClick={() => setSortDirection(option.value)}
           >
             {option.label}
@@ -175,15 +179,14 @@ export function TeamsRoute() {
                 {tierLabels[team.pickTier]}
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="grid grid-cols-3 gap-2 text-sm">
               <Metric label="EPA" value={fmt(team.epa)} />
               <Metric label="xP" value={fmt(team.xp)} />
               <Metric label="Avg RP" value={fmt(team.averageRp)} />
-              <Metric label="Pit" value={team.pitScouted ? "Scouted" : "Not scouted"} />
-              <Metric label="Reports" value={String(team.matchReportCount)} />
-              <Metric label="Driver" value={String(team.averageDriverRating)} />
-              <Metric label="Teleop Fuel" value={String(team.averageTeleopFuel)} />
             </div>
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-t pt-3 text-xs">
+              {[["Pit", team.pitScouted ? "Scouted" : "Not scouted"], ["Reports", String(team.matchReportCount)], ["Driver", String(team.averageDriverRating)], ["Teleop fuel", String(team.averageTeleopFuel)]].map(([label, value]) => <div key={label} className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2"><dt className="text-muted-foreground">{label}</dt><dd className="font-medium tabular-nums">{value}</dd></div>)}
+            </dl>
           </button>
         ))}
       </div>
@@ -215,6 +218,8 @@ export function TeamDetailDialog({
     teamNumber === null ? "skip" : { eventId, teamNumber, xpScope },
   )
   const setPicked = useMutation(api.teams.setPicked)
+  const removePitReport = useMutation(api.pit.remove)
+  const removeMatchReport = useMutation(api.matchScouting.removeReport)
   const me = useQuery(api.members.me)
   const [savingPicked, setSavingPicked] = useState(false)
 
@@ -333,6 +338,10 @@ export function TeamDetailDialog({
               {detail.pitReports.length ? (
                 detail.pitReports.map((report) => (
                   <div key={report._id} className="rounded-lg bg-muted p-3 text-sm">
+                    {me?.role === "admin" && <DeleteReportControl
+                      label={`pit report for team ${detail.team.eventTeamAlias ?? teamNumber}`}
+                      onDelete={() => removePitReport({ reportId: report._id })}
+                    />}
                     {!!report.photoIds?.length && <PitPhotos photoIds={report.photoIds} />}
                     <p>
                       Fuel hub: {report.canScoreFuelHub ? "yes" : "no"} · Preload:{" "}
@@ -372,6 +381,10 @@ export function TeamDetailDialog({
               {detail.matchReports.length ? (
                 detail.matchReports.map((report) => (
                   <div key={report._id} className="rounded-lg border p-3 text-sm">
+                    {me?.role === "admin" && <DeleteReportControl
+                      label={`QM${report.matchNumber} report for team ${detail.team.eventTeamAlias ?? teamNumber}`}
+                      onDelete={() => removeMatchReport({ reportId: report._id })}
+                    />}
                     <p className="font-medium">QM{report.matchNumber}</p>
                     <p>
                       {report.autoCycles !== undefined
@@ -387,6 +400,7 @@ export function TeamDetailDialog({
                     {report.transitionActivity && <p className="whitespace-pre-wrap break-words">Transition: {report.transitionActivity}</p>}
                     {!!report.tags.length && <p className="mt-1 text-muted-foreground">{report.tags.join(" · ")}</p>}
                     {report.autoNotes && <p className="whitespace-pre-wrap break-words">Auto: {report.autoNotes}</p>}
+                    {!!report.autoPath?.length && <div className="mt-3 grid gap-2"><p className="font-medium">Observed auto path</p><AutoPath value={report.autoPath} readOnly /></div>}
                     {report.teleopNotes && <p className="whitespace-pre-wrap break-words">Teleop: {report.teleopNotes}</p>}
                     {report.endgameNotes && <p className="whitespace-pre-wrap break-words">Endgame: {report.endgameNotes}</p>}
                   </div>
@@ -430,6 +444,39 @@ function sortTeams(
   if (aValue === undefined) return 1
   if (bValue === undefined) return -1
   return (aValue - bValue) * multiplier || (a.teamNumber - b.teamNumber)
+}
+
+function DeleteReportControl({ label, onDelete }: { label: string; onDelete: () => Promise<unknown> }) {
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  async function remove() {
+    if (deleting) return
+    setDeleting(true)
+    try {
+      await onDelete()
+      toast.success("Scouting report deleted")
+    } catch {
+      toast.error("Could not delete report. Check your admin access and try again.")
+      setDeleting(false)
+    }
+  }
+
+  return confirming ? (
+    <div role="alert" className="mb-3 grid gap-2 rounded-lg border border-destructive/30 p-3">
+      <p>Delete this {label}? This cannot be undone. Other reports and official match results are kept.</p>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" className="min-h-10" disabled={deleting} onClick={() => setConfirming(false)}>Cancel</Button>
+        <Button type="button" variant="destructive" className="min-h-10" disabled={deleting} onClick={() => void remove()}>{deleting ? "Deleting…" : "Confirm delete"}</Button>
+      </div>
+    </div>
+  ) : (
+    <div className="mb-2 flex justify-end">
+      <Button type="button" variant="destructive" size="sm" className="min-h-10" aria-label={`Delete ${label}`} onClick={() => setConfirming(true)}>
+        <Trash2 /> Delete report
+      </Button>
+    </div>
+  )
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

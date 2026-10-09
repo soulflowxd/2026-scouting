@@ -50,7 +50,7 @@ export function AuthGate({ children }: AuthGateProps) {
   if (isLoading) {
     return (
       <div className="grid min-h-svh place-items-center bg-background text-foreground">
-        <Loader2 className="size-5 animate-spin" aria-hidden="true" />
+        <div role="status" className="flex items-center gap-3 text-sm text-muted-foreground"><Loader2 className="size-5 animate-spin" aria-hidden="true" />Loading scouting…</div>
       </div>
     )
   }
@@ -60,10 +60,11 @@ export function AuthGate({ children }: AuthGateProps) {
       <div className="grid min-h-svh place-items-center bg-background p-4 text-foreground">
         <form
           onSubmit={onSubmit}
-          className="grid w-full max-w-sm gap-4 rounded-xl border bg-card p-5 shadow-sm"
+          aria-busy={pending}
+          className="grid w-full max-w-sm gap-5 rounded-2xl border bg-card p-6 shadow-sm"
         >
           <div className="grid gap-1">
-            <h1 className="text-xl font-semibold">2026 Scouting</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">2026 Scouting</h1>
             <p className="text-sm text-muted-foreground">
               {mode === "signIn"
                 ? "Sign in to your scouting account"
@@ -113,6 +114,8 @@ export function AuthGate({ children }: AuthGateProps) {
               name="email"
               type="email"
               autoComplete="email"
+              autoCapitalize="none"
+              spellCheck={false}
               required
             />
           </div>
@@ -130,13 +133,14 @@ export function AuthGate({ children }: AuthGateProps) {
               A minimum of 8 characters is required.
             </p>
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" disabled={pending}>
-            {pending ? "Working..." : mode === "signIn" ? "Sign in" : "Create account"}
+          {error && <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
+          <Button type="submit" size="lg" disabled={pending}>
+            {pending ? "Working…" : mode === "signIn" ? "Sign in" : "Create account"}
           </Button>
           <Button
             type="button"
             variant="ghost"
+            disabled={pending}
             onClick={() => {
               setError(null)
               setMode(mode === "signIn" ? "signUp" : "signIn")
@@ -152,7 +156,7 @@ export function AuthGate({ children }: AuthGateProps) {
   if (me === undefined) {
     return (
       <div className="grid min-h-svh place-items-center bg-background text-foreground">
-        <Loader2 className="size-5 animate-spin" aria-hidden="true" />
+        <div role="status" className="flex items-center gap-3 text-sm text-muted-foreground"><Loader2 className="size-5 animate-spin" aria-hidden="true" />Loading your account…</div>
       </div>
     )
   }

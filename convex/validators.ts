@@ -77,6 +77,7 @@ export const matchReportInputValidator = {
   offShiftActivity: v.optional(v.string()),
   autoClimb: autoClimbValidator,
   autoNotes: v.string(),
+  autoPath: v.optional(v.array(v.array(v.object({ x: v.number(), y: v.number() })))),
   teleopFuel: v.optional(v.number()),
   teleopNotes: v.string(),
   endgameClimb: climbLevelValidator,

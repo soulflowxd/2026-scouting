@@ -52,10 +52,13 @@ test("official results are authorized, cached, and applied without changing scou
   expect(reports[0]).toMatchObject({ wonMatch: true, wonAuto: false, autoCycles: 3, shift1Cycles: 4, tags: ["Broke down"] })
   expect(await scout.action(api.tbaMatches.refresh, { eventId, matchNumber: 1 })).toBe("cached")
   expect(fetchMock).toHaveBeenCalledTimes(1)
+  await t.run(ctx => ctx.db.insert("members", { tokenIdentifier: "admin", role: "admin", approvalStatus: "approved", lastSeenAt: 1 }))
+  await t.withIdentity({ tokenIdentifier: "admin" }).mutation(api.matchScouting.removeReport, { reportId: reports[0]._id })
   await scout.mutation(api.matchScouting.saveReport, {
     eventId, matchNumber: 1, teamNumber: 9994, autoClimb: "none", endgameClimb: "none",
     autoNotes: "", teleopNotes: "", endgameNotes: "", driverRating: 5, defenseRating: 5,
     autoFuel: 0, teleopFuel: 0, tags: [], wonAuto: true, wonMatch: false, totalMatchPoints: 1,
+    autoPath: [[{ x: 100, y: 200 }]],
   })
   expect((await t.run(ctx => ctx.db.query("matchReports").take(10)))[0]).toMatchObject({ wonAuto: false, wonMatch: true, totalMatchPoints: 200 })
   // A posted correction updates both the match and existing reports.

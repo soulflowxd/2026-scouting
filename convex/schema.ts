@@ -96,6 +96,8 @@ export default defineSchema({
     .index("by_eventId", ["eventId"])
     .index("by_eventId_and_teamNumber", ["eventId", "teamNumber"]),
   matches: defineTable({
+    completionReviewAt: v.optional(v.number()),
+    completionAssignments: v.optional(v.array(v.object({ teamNumber: v.number(), scoutToken: v.string(), scoutName: v.string() }))),
     tbaResult: v.optional(tbaResultValidator),
     tbaCheckedAt: v.optional(v.number()),
     eventId: v.id("events"),
@@ -204,6 +206,7 @@ export default defineSchema({
     offShiftActivity: v.optional(v.string()),
     autoClimb: v.union(v.literal("none"), v.literal("level1")),
     autoNotes: v.string(),
+    autoPath: v.optional(v.array(v.array(v.object({ x: v.number(), y: v.number() })))),
     teleopFuel: v.optional(v.number()),
     teleopNotes: v.string(),
     endgameClimb: climbLevel,
@@ -229,6 +232,7 @@ export default defineSchema({
     ]),
   scoutAssignmentParticipants: defineTable({
     eventId: v.id("events"), memberId: v.id("members"),
+    included: v.optional(v.boolean()),
   }).index("by_eventId_and_memberId", ["eventId", "memberId"]),
   scoutTeamAssignments: defineTable({
     eventId: v.id("events"), teamNumber: v.number(), memberId: v.id("members"),
@@ -295,6 +299,7 @@ export default defineSchema({
     createdAt: v.number(),
     readAt: v.optional(v.number()),
   })
+    .index("by_eventId_and_matchNumber_and_teamNumber", ["eventId", "matchNumber", "teamNumber"])
     .index("by_recipientToken_and_createdAt", ["recipientToken", "createdAt"])
     .index("by_recipientToken_and_eventId_and_matchNumber_and_teamNumber", [
       "recipientToken",

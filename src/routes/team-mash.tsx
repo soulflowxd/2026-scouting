@@ -15,7 +15,7 @@ type Team = { teamNumber: number; nickname: string; eventTeamAlias?: string; ava
 export function TeamMashRoute() {
   const { activeEvent } = useActiveEvent()
   const me = useQuery(api.members.me)
-  if (!activeEvent || !me) return <p className="p-5 text-muted-foreground">Select an event to start Team Mash.</p>
+  if (!activeEvent || !me) return <section className="grid gap-2 rounded-xl border bg-card p-5"><h1 className="text-2xl font-semibold">Rank teams</h1><p className="text-sm text-muted-foreground">Select an event to compare robots and view its shared ranking.</p></section>
   return <MashGame key={`${activeEvent._id}:${me.tokenIdentifier}`} eventId={activeEvent._id} eventName={eventLabel(activeEvent)} year={Number(activeEvent.eventKey.slice(0, 4))} minimumTeams={10} />
 }
 
@@ -54,7 +54,7 @@ function MashGame({ eventId, eventName, year, minimumTeams }: { eventId: Id<"eve
 
   return <section className="mx-auto grid w-full min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] gap-4 pb-8 sm:gap-6 [&>*]:min-w-0">
     <div className="flex flex-wrap items-start justify-between gap-4">
-      <div className="min-w-0 flex-1"><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Rank Teams</h1><p className="mt-1 text-sm text-muted-foreground">Compare two robots. Pick your favorite.</p><p className="mt-1 hidden text-xs text-muted-foreground sm:block">{eventName}</p></div>
+      <div className="min-w-0 flex-1"><h1 className="text-2xl font-semibold tracking-tight">Rank teams</h1><p className="mt-1 text-sm text-muted-foreground">Compare two robots. Pick your favorite.</p><p className="mt-1 hidden text-xs text-muted-foreground sm:block">{eventName}</p></div>
       <div className="rounded-lg bg-muted/50 px-3 py-2 text-right"><p className="text-lg font-semibold tabular-nums">{votes.length}</p><p className="text-[11px] text-muted-foreground">votes</p></div>
     </div>
     {saveError && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">Could not save the change. Please try again.</p>}
@@ -77,7 +77,7 @@ function MashGame({ eventId, eventName, year, minimumTeams }: { eventId: Id<"eve
     </div>
       </div>
     </details>
-    {teams === undefined || sharedVotes === undefined ? <p>Loading teams and shared rankings…</p> : !current ? <p className="rounded-xl border p-6">Fewer than two teams match this filter. Choose a larger percentage or All teams to build more Elo ratings.</p> : <>
+    {teams === undefined || sharedVotes === undefined ? <p role="status" className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">Loading teams and shared rankings…</p> : !current ? <p className="rounded-xl border p-6">Fewer than two teams match this filter. Choose a larger percentage or All teams to build more Elo ratings.</p> : <>
       <div className="grid grid-cols-2 items-start gap-2 sm:gap-4">
         {current.map((number, index) => {
           const team = teams.find(team => team.teamNumber === number)
@@ -99,7 +99,7 @@ function MashGame({ eventId, eventName, year, minimumTeams }: { eventId: Id<"eve
           return <tr key={team.teamNumber} className="border-b last:border-0"><td className="p-2 text-muted-foreground">{index + 1}</td><td className="p-2"><button className="text-left hover:underline" onClick={() => setSelectedTeam(team.teamNumber)}>{team.eventTeamAlias ?? team.teamNumber} <span className="text-muted-foreground">{team.nickname}</span></button></td><td className="p-2 font-semibold tabular-nums">{Math.round(rating.score)}</td><td className="p-2">{rating.games}</td><td className="p-2">{rating.wins}</td></tr>
         })}
       </tbody></table></div>
-      {!votes.length && <p className="py-6 text-center text-sm text-muted-foreground">Choose your first robot to start your ranking.</p>}
+      {!votes.length && <p className="py-6 text-center text-sm text-muted-foreground">No rankings yet. Compare two robots to start this event’s shared ranking.</p>}
       {votes.length >= 5000 && <p className="mt-3 text-sm">This ranking has reached its 5,000-comparison limit.</p>}
     </section>
     <TeamDetailDialog eventId={eventId} teamNumber={selectedTeam} xpScope={scope} onOpenChange={open => { if (!open) setSelectedTeam(null) }} />
@@ -119,9 +119,9 @@ function RobotCard({ team, eventId, year, side, onChoose, onDetails, disabled }:
   }
   const format = (value?: number) => value === undefined ? "—" : value.toFixed(1)
   return <article className="grid min-w-0 content-start gap-3 rounded-xl border bg-card p-2 sm:p-4">
-    <div className="grid min-w-0 gap-2 lg:flex lg:items-start lg:justify-between"><div className="min-w-0"><p className="text-xs text-muted-foreground">ROBOT {side}</p><div className="mt-2 flex flex-wrap items-center gap-2"><TeamAvatar teamNumber={team.teamNumber} year={year} avatar={team.avatar} /><h2 className="break-all text-xl font-semibold tabular-nums sm:text-3xl">{team.eventTeamAlias ?? team.teamNumber}</h2></div><p className="mt-2 line-clamp-2 min-h-10 break-words text-sm text-muted-foreground" title={team.nickname}>{team.nickname}</p></div><Button size="sm" variant="outline" onClick={onDetails}>Team info</Button></div>
+    <div className="grid min-w-0 gap-2 lg:flex lg:items-start lg:justify-between"><div className="min-w-0"><p className="text-xs text-muted-foreground">Robot {side}</p><div className="mt-2 flex flex-wrap items-center gap-2"><TeamAvatar teamNumber={team.teamNumber} year={year} avatar={team.avatar} /><h2 className="break-all text-xl font-semibold tabular-nums sm:text-3xl">{team.eventTeamAlias ?? team.teamNumber}</h2></div><p className="mt-2 line-clamp-2 min-h-10 break-words text-sm text-muted-foreground" title={team.nickname}>{team.nickname}</p></div><Button size="sm" variant="outline" onClick={onDetails}>Team info</Button></div>
     <Button className="min-h-11 w-full px-1 text-xs sm:text-sm" onClick={onChoose} disabled={disabled || detail === undefined}>Pick {team.eventTeamAlias ?? team.teamNumber}</Button>
-    <dl className="grid grid-cols-3 gap-1 sm:gap-2">{[["EPA", format(team.epa)], ["xP", format(team.xp)], ["RP", format(team.averageRp)]].map(([label, value]) => <div key={label} className="min-w-0 rounded-md bg-muted/60 px-1 py-2 sm:px-3"><dt className="text-[10px] text-muted-foreground sm:text-xs">{label}</dt><dd className="break-all text-xs font-semibold tabular-nums sm:text-lg" aria-label={value === "—" ? `${label} unknown` : undefined}>{value}</dd></div>)}</dl>
+    <dl className="grid grid-cols-3 gap-1 sm:gap-2">{[["EPA", format(team.epa)], ["xP", format(team.xp)], ["RP", format(team.averageRp)]].map(([label, value]) => <div key={label} className="min-w-0 rounded-md bg-muted/60 px-1 py-2 sm:px-3"><dt className="text-[11px] text-muted-foreground sm:text-xs">{label}</dt><dd className="break-all text-xs font-semibold tabular-nums sm:text-lg" aria-label={value === "—" ? `${label} unknown` : undefined}>{value}</dd></div>)}</dl>
     <RobotPhotos eventId={eventId} teamNumber={team.teamNumber} year={year} photoIds={[...new Set([...(detail?.pitReports ?? [])].sort((a, b) => b.updatedAt - a.updatedAt).flatMap(report => report.photoIds ?? []))].slice(0, 6)} />
     <dl className="grid grid-cols-1 gap-x-4 gap-y-2 break-words text-xs sm:grid-cols-2">{[["Matches played (event)", played ?? "Unknown"], ["Matches scouted", scoutedMatches ?? "Loading…"], ["Breakdowns", breakdowns === undefined ? "Loading…" : `${breakdowns} / ${scoutedMatches} scouted`], ["Electrical quality", quality("electricalQuality")], ["Build quality", quality("buildQuality")]].map(([label, value]) => <div key={label} className="min-w-0 border-t pt-2" title={label === "Breakdowns" ? "Unique scouted matches, not duplicate reports. Unscouted matches may have unreported failures." : undefined}><dt className="text-muted-foreground">{label}</dt><dd className="mt-0.5 font-medium tabular-nums">{value}</dd></div>)}</dl>
   </article>

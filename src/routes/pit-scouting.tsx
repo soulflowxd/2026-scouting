@@ -129,9 +129,9 @@ export function PitScoutingRoute() {
   return (
     <section className="grid gap-4">
       <div>
-        <h1 className="text-2xl font-semibold">Pit Scouting</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Pit scouting</h1>
         <p className="text-sm text-muted-foreground">
-          {eventLabel(activeEvent)}. Pick a team, scout with taps, avoid long typing.
+          {eventLabel(activeEvent)} · Choose a team to record its robot capabilities.
         </p>
       </div>
       {selectedTeam === null ? (
@@ -211,6 +211,7 @@ function PitForm({
   onBack: () => void
 }) {
   const reports = useQuery(api.pit.getForTeam, { eventId, teamNumber })
+  const canSkipPhoto = useQuery(api.members.me)?.role === "admin"
   const scoutingClosed = useQuery(api.events.list)?.find(event => event._id === eventId)?.scoutingEnabled === false
   const save = useMutation(api.pit.save)
   const generateUploadUrl = useMutation(api.pit.generateUploadUrl)
@@ -290,7 +291,7 @@ function PitForm({
 
   async function onSubmit() {
     if (uploading || saving) return
-    if (!photoIds.length) { toast.error("Upload at least one robot photo before submitting"); return }
+    if (!photoIds.length && !canSkipPhoto) { toast.error("Upload at least one robot photo before submitting"); return }
     setSaving(true)
     try {
       const bps = form.bps.trim() === "" ? undefined : Number(form.bps)
@@ -330,6 +331,14 @@ function PitForm({
       toast.error(error instanceof Error ? error.message : "Save failed")
     } finally { setSaving(false) }
   }
+
+  if (reports?.length) return (
+    <div className="grid gap-3 rounded-xl border bg-card p-4">
+      <h2 className="text-xl font-semibold">Team {teamNumber} · Pit report submitted</h2>
+      <p className="text-sm text-muted-foreground">An admin must delete the existing pit report in team details before this team can be scouted again.</p>
+      <Button type="button" variant="outline" onClick={onBack}>Back to teams</Button>
+    </div>
+  )
 
   return (
     <div className="grid gap-4">
@@ -474,7 +483,7 @@ function PitForm({
         </div>
       </FormSection>
       <FormSection title="Robot photos">
-        <p className="text-sm text-muted-foreground">{photoIds.length}/4 photos · At least 1 required{photoIds.length > 4 ? " · Remove extra photos before saving" : ""}</p>
+        <p className="text-sm text-muted-foreground">{photoIds.length}/4 photos · {canSkipPhoto ? "Optional for admins" : "At least 1 required"}{photoIds.length > 4 ? " · Remove extra photos before saving" : ""}</p>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" disabled={uploading || saving || reports === undefined || photoIds.length >= 4} onClick={() => cameraInput.current?.click()}><Camera />Take photo</Button>
           <Button type="button" variant="outline" disabled={uploading || saving || reports === undefined || photoIds.length >= 4} onClick={() => uploadInput.current?.click()}><Upload />Upload photos</Button>
@@ -492,7 +501,7 @@ function PitForm({
         {uploading && <p role="status" className="text-sm text-muted-foreground">Uploading photos...</p>}
         <PitPhotos photoIds={photoIds} onRemove={uploading || saving ? undefined : id => setPhotoIds(current => current.filter(photo => photo !== id))} />
       </FormSection>
-      <Button type="button" size="lg" disabled={scoutingClosed || uploading || saving || !photoIds.length || photoIds.length > 4 || reports === undefined} onClick={() => void onSubmit()}>
+      <Button type="button" size="lg" disabled={scoutingClosed || uploading || saving || (!photoIds.length && !canSkipPhoto) || photoIds.length > 4 || reports === undefined} onClick={() => void onSubmit()}>
         {saving ? "Saving..." : "Submit pit report"}
       </Button>
     </div>
@@ -501,8 +510,8 @@ function PitForm({
 
 function FormSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="grid gap-3 rounded-xl border bg-card p-4 sm:p-5">
-      <h3 className="border-b pb-3 text-sm font-semibold tracking-tight">{title}</h3>
+    <div className="grid gap-4 rounded-xl border bg-card p-4 sm:p-5">
+      <h3 className="border-b pb-3 text-base font-semibold tracking-tight">{title}</h3>
       {children}
     </div>
   )

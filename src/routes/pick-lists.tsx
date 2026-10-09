@@ -27,7 +27,7 @@ import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { useActiveEvent } from "@/lib/active-event"
+import { eventLabel, useActiveEvent } from "@/lib/active-event"
 import { tierLabels } from "@/lib/labels"
 import { TeamDetailDialog } from "@/routes/teams"
 import { TeamAvatar } from "@/components/team-avatar"
@@ -163,7 +163,8 @@ export function PickListsRoute() {
   }
 
   return (
-    <section className="mx-auto grid w-full max-w-2xl gap-6 pb-6">
+    <>
+    <section className="mx-auto grid w-full max-w-2xl gap-6 pb-6 md:hidden">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Pick lists</h1>
         <p className="mt-1 text-sm text-muted-foreground">{activeEvent.name || activeEvent.eventKey}</p>
@@ -243,6 +244,44 @@ export function PickListsRoute() {
         </div>
       </details>}
     </section>
+    <section className="hidden h-[calc(100svh-6.5rem)] min-h-0 flex-col gap-4 overflow-hidden md:flex" aria-label="Pick lists desktop">
+      <div className="shrink-0 rounded-xl border bg-card p-4 shadow-sm">
+        <p className="flex items-center gap-2 text-sm text-muted-foreground"><ClipboardList className="size-4" aria-hidden="true" />Pick Lists</p>
+        <h1 className="mt-2 text-3xl font-semibold">Build personal boards and merge the best one.</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{eventLabel(activeEvent)}</p>
+        <div className="mt-4 grid grid-cols-[minmax(0,1fr)_minmax(12rem,2fr)] gap-2">
+          <Input aria-label="New personal list name" value={newName} onChange={event => setNewName(event.target.value)} placeholder="Drive team list" />
+          <Button type="button" disabled={!newName.trim()} onClick={() => void onCreatePersonal()}><Plus aria-hidden="true" />New personal</Button>
+        </div>
+      </div>
+      <div className="grid min-h-0 flex-1 grid-cols-2 gap-4 overflow-hidden">
+        <button type="button" onClick={() => {
+          if (primaryList) setSelectedListId(primaryList._id)
+          else void onEnsurePrimary()
+        }} className="grid min-h-48 content-end rounded-xl border bg-card p-4 text-left shadow-sm transition-colors hover:bg-muted/40">
+          <ClipboardList className="size-6 text-muted-foreground" aria-hidden="true" />
+          <div className="mt-10"><h2 className="text-lg font-semibold">Primary pick list</h2><p className="mt-1 text-sm text-muted-foreground">View the shared main board. Only admins can edit it.</p></div>
+        </button>
+        <div className="grid min-h-48 rounded-xl border bg-card p-4 shadow-sm">
+          {personalLists.length ? <div className="grid content-start gap-2 overflow-y-auto pr-1">
+            {personalLists.map(list => <button key={list._id} type="button" onClick={() => setSelectedListId(list._id)} className="rounded-lg border bg-background px-3 py-2 text-left text-sm font-medium shadow-sm transition-colors hover:bg-muted">{list.name}</button>)}
+          </div> : <div className="grid place-items-center text-center text-sm font-medium text-muted-foreground">Create a personal pick list above to open a full-screen board.</div>}
+        </div>
+      </div>
+      <div className="shrink-0 rounded-xl border bg-card p-4 shadow-sm">
+        <div className="flex items-start gap-2"><GitMerge className="mt-0.5 size-5 text-muted-foreground" aria-hidden="true" /><div><h2 className="font-semibold">Consensus merge</h2><p className="text-sm text-muted-foreground">Select personal boards to preview or apply to primary.</p></div></div>
+        <div className="mt-4 grid gap-3">
+          <select aria-label="Personal boards for consensus" className="h-9 rounded-lg border border-input bg-background px-3 text-sm">
+            {personalLists.length ? personalLists.map(list => <option key={list._id} value={list._id}>{list.name}</option>) : <option>No personal pick lists</option>}
+          </select>
+          <div className="grid grid-cols-2 gap-2">
+            <Button type="button" variant="ghost" disabled={me?.role !== "admin" || !personalLists.length} onClick={() => void onRunConsensus()}>Preview</Button>
+            <Button type="button" disabled={me?.role !== "admin" || !latestConsensus} onClick={() => void onApplyConsensus()}>Apply to primary</Button>
+          </div>
+        </div>
+      </div>
+    </section>
+    </>
   )
 }
 function PickBoard({
@@ -637,7 +676,7 @@ function PickCard({
         isDragging ? "opacity-60 ring-2 ring-primary" : ""
       } ${
         isSearchActive && isSearchMatch
-          ? "border-[#001f54] ring-2 ring-[#001f54]/70"
+          ? "border-primary ring-2 ring-primary/70"
           : ""
       } ${
         isSearchActive && !isSearchMatch ? "opacity-45" : ""
@@ -675,7 +714,7 @@ function PickCard({
           { label: "xP", value: item.xp },
         ].map(({ label, value }) => (
           <div key={label} className="min-w-0 text-center">
-            <dt className="text-[10px] font-medium text-muted-foreground">{label}</dt>
+            <dt className="text-[11px] font-medium text-muted-foreground">{label}</dt>
             <dd className="text-sm font-semibold tabular-nums">
               {value === undefined ? "—" : value.toFixed(label === "RP" ? 2 : 1)}
             </dd>

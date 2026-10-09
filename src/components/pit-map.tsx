@@ -38,7 +38,7 @@ export function PitMap({
       <div className="max-h-[65svh] overflow-auto rounded-md border bg-background p-3" tabIndex={0} aria-label="Pit floor plan">
         <svg
           viewBox={`0 0 ${layout.width} ${layout.height}`}
-          style={{ width: 560 * zoom, maxWidth: zoom === 1 ? "100%" : undefined, minWidth: 360, height: "auto" }}
+          style={{ width: 560 * zoom, maxWidth: zoom === 1 ? "100%" : undefined, minWidth: zoom === 1 ? undefined : 360, height: "auto" }}
           className="mx-auto block"
           aria-label="Nexus venue pit map"
         >
@@ -60,7 +60,7 @@ export function PitMap({
                 aria-label={`Pit ${pit.id}${pit.teamNumber ? `, team ${pit.teamNumber}` : ", empty"}${team?.pitScouted ? ", scouted" : ""}`}
                 onClick={() => { if (team) onSelect(team.teamNumber) }}
                 onKeyDown={(event) => { if (team && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onSelect(team.teamNumber) } }}
-                className={`outline-none ${team ? "cursor-pointer" : ""} ${needle && !highlighted ? "opacity-35" : ""}`}
+                className={`focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${team ? "cursor-pointer" : ""} ${needle && !highlighted ? "opacity-35" : ""}`}
               >
                 <title>{pit.id}{team ? ` - ${team.teamNumber} ${team.nickname}` : ""}</title>
                 <rect {...box(pit)} x={pit.x - pit.width / 2 + 2} y={pit.y - pit.height / 2 + 2} width={pit.width - 4} height={pit.height - 4} rx={3}

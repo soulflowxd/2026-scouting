@@ -42,10 +42,10 @@ function Board({ storageKey, title, teams }: { storageKey: string; title: string
   const update = (index: number, patch: Partial<StationState>) => setBoard((current) => current.map((s, i) => i === index ? { ...s, ...patch } : s))
   return <section className="grid min-w-0 gap-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-2xl font-semibold">Strategy Board</h1><p className="text-sm text-muted-foreground">{title}</p></div>
+      <div><h1 className="text-2xl font-semibold tracking-tight">Strategy board</h1><p className="text-sm text-muted-foreground">{title}</p></div>
       <Button variant="outline" onClick={() => { if (window.confirm("Reset all teams and paths on this board?")) { setBoard(fresh()); setPlacing(false) } }}><RotateCcw />Reset board</Button>
     </div>
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
       {stations.map((station, index) => <div key={station.name} className="grid min-w-0 gap-2 border-b pb-3">
         <button type="button" aria-pressed={active === index} onClick={() => { setActive(index); setPlacing(false) }} className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm font-semibold ${active === index ? "border-foreground bg-muted" : "border-transparent"}`}>
           <span className="size-3 rounded-full" style={{ backgroundColor: station.color }} />{station.name}

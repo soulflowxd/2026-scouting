@@ -3,6 +3,7 @@ import { api, internal } from "./_generated/api"
 import { action, env, internalAction, internalMutation, internalQuery, query, type ActionCtx } from "./_generated/server"
 import type { Doc, Id } from "./_generated/dataModel"
 import { requireApprovedUserFromDb } from "./lib/authz"
+import { ensureCompletionReview } from "./lib/scoutingCompletion"
 import { parseTbaResult, reportResult, tbaResultValidator } from "./lib/tbaMatchResult"
 
 const matchArgs = { eventId: v.id("events"), matchNumber: v.number() }
@@ -23,6 +24,7 @@ export const applyResult = internalMutation({
   handler: async (ctx, args) => {
     const match = await ctx.db.get(args.matchId)
     if (!match) return
+    await ensureCompletionReview(ctx, match)
     await ctx.db.patch(match._id, { tbaResult: args.result, tbaCheckedAt: Date.now() })
     const reports = await ctx.db.query("matchReports").withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", match.eventId).eq("matchNumber", match.matchNumber)).take(500)
     for (const report of reports) {

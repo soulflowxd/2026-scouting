@@ -7,8 +7,10 @@ import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
 import { Stepper } from "@/components/stepper"
+import { AutoPath, type PathPoint } from "@/components/auto-path"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
 import { eventLabel, useActiveEvent } from "@/lib/active-event"
 import { climbLabels, matchTags } from "@/lib/labels"
 import { cn } from "@/lib/utils"
@@ -28,6 +30,7 @@ type MatchFormState = {
   autoCycles: number
   autoClimb: AutoClimb
   autoNotes: string
+  autoPath: PathPoint[][]
   shift1Cycles: number
   shift2Cycles: number
   shift3Cycles: number
@@ -49,6 +52,7 @@ const emptyMatchForm: MatchFormState = {
   autoCycles: 0,
   autoClimb: "none",
   autoNotes: "",
+  autoPath: [],
   shift1Cycles: 0,
   shift2Cycles: 0,
   shift3Cycles: 0,
@@ -113,7 +117,7 @@ export function MatchScoutingRoute() {
     <section className="grid gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="grid gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Match Scouting</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Match scouting</h1>
           <p className="text-sm text-muted-foreground">
             {eventLabel(activeEvent)} · Select a team to claim its robot and start scouting.
           </p>
@@ -144,6 +148,7 @@ export function MatchScoutingRoute() {
                 type="button"
                 size="sm"
                 variant="ghost"
+                aria-pressed={teamSort === option.value}
                 className={cn(
                   "h-7 rounded-md px-3",
                   teamSort === option.value && "bg-background shadow-sm hover:bg-background",
@@ -161,6 +166,7 @@ export function MatchScoutingRoute() {
                 type="button"
                 size="sm"
                 variant="ghost"
+                aria-pressed={sortDirection === option.value}
                 className={cn(
                   "h-7 rounded-md px-3",
                   sortDirection === option.value &&
@@ -312,8 +318,8 @@ function AllianceRow({
             )}
           >
             <span className="truncate text-sm font-semibold">{team}</span>
-            <span className="truncate text-[10px] font-medium opacity-75">
-              {teamMetricLabel(teamStats, team)}
+            <span className="flex flex-wrap gap-x-1 text-[11px] font-medium">
+              {teamMetricLabel(teamStats, team).split(" / ").map(metric => <span key={metric}>{metric}</span>)}
             </span>
           </button>
         ))}
@@ -392,6 +398,7 @@ function MatchForm({
   const [requestingSub, setRequestingSub] = useState(false)
   const claimRobot = useMutation(api.matchScouting.claimRobot)
   const saveReport = useMutation(api.matchScouting.saveReport)
+  const reportSubmitted = useQuery(api.matchScouting.reportSubmitted, { eventId, matchNumber, teamNumber })
   const draftKey = `scouting:match-draft:${scoutToken}:${eventId}:${matchNumber}:${teamNumber}`
   const [initialDraft] = useState(() => {
     try {
@@ -406,6 +413,7 @@ function MatchForm({
         if (typeof emptyMatchForm[field] === "boolean" && typeof value === "boolean") Object.assign(result, { [field]: value })
       }
       result.tags = Array.isArray(draft.tags) ? draft.tags.filter((tag): tag is string => typeof tag === "string" && matchTags.includes(tag)) : []
+      if (Array.isArray(draft.autoPath) && draft.autoPath.length <= 200 && draft.autoPath.every(path => Array.isArray(path) && path.every(p => p && typeof p.x === "number" && Number.isFinite(p.x) && p.x >= 0 && p.x <= 1000 && typeof p.y === "number" && Number.isFinite(p.y) && p.y >= 0 && p.y <= 500)) && draft.autoPath.reduce((count, path) => count + path.length, 0) <= 2000) result.autoPath = draft.autoPath
       if (!["none", "level1"].includes(result.autoClimb)) result.autoClimb = "none"
       if (!["none", "level1", "level2", "level3"].includes(result.endgameClimb)) result.endgameClimb = "none"
       return result
@@ -510,7 +518,8 @@ function MatchForm({
         <p role="status" className="text-xs text-muted-foreground">{hasDraft ? "Draft saved on this device" : "Drafts stay on this device"}{dirty ? " · Unsaved changes" : ""} · Not submitted</p>
         <Button type="button" variant="outline" disabled={saving} onClick={() => saveDraft()}>Save draft</Button>
       </div>
-      <fieldset disabled={saving} className="grid min-w-0 gap-4">
+      {reportSubmitted && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">Report already submitted for team {teamNumber} in QM{matchNumber}. An admin must delete it in team details before this robot can be scouted again.</p>}
+      <fieldset disabled={saving || reportSubmitted !== false} className="grid min-w-0 gap-4">
       <div className="rounded-xl border bg-card p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -569,14 +578,23 @@ function MatchForm({
             setForm((current) => ({ ...current, autoClimb: autoClimb as AutoClimb }))
           }
         />
+        <div className="grid gap-2">
+        <Label htmlFor="auto-notes">Auto notes</Label>
         <Textarea
+          id="auto-notes"
           value={form.autoNotes}
           onChange={(event) =>
             setForm((current) => ({ ...current, autoNotes: event.target.value }))
           }
-          placeholder="Auto notes"
+          placeholder="What did you notice during auto?"
           aria-label="Auto notes"
         />
+        </div>
+        <div id="observed-auto-path" className="grid min-w-0 gap-2">
+          <h3 className="text-sm font-medium">Observed auto path</h3>
+          <p className="text-xs text-muted-foreground">Draw where this robot actually drove during auto, not its planned pit path. Use Line to draw or Points to connect taps. If it did not move, tap its starting position.</p>
+          <AutoPath value={form.autoPath} onChange={autoPath => setForm(current => ({ ...current, autoPath }))} />
+        </div>
       </FormSection>
       <FormSection title="Teleop">
         <p className="text-sm text-muted-foreground">1 cycle = one intake set followed immediately by one shooting set.</p>
@@ -600,14 +618,18 @@ function MatchForm({
             onChange={(event) => setForm(current => ({ ...current, offShiftActivity: event.target.value }))}
             placeholder="For example: collect fuel, defend, feed teammates, or idle" />
         </label>
+        <div className="grid gap-2">
+        <Label htmlFor="teleop-notes">Teleop notes (observations)</Label>
         <Textarea
+          id="teleop-notes"
           value={form.teleopNotes}
           onChange={(event) =>
             setForm((current) => ({ ...current, teleopNotes: event.target.value }))
           }
-          placeholder="Teleop notes (observations)"
+          placeholder="Describe the robot’s performance and consistency."
           aria-label="Teleop notes (observations)"
         />
+        </div>
       </FormSection>
       <FormSection title="Endgame">
         <Stepper id="endgameCycles" label="Endgame cycles" value={form.endgameCycles}
@@ -623,14 +645,18 @@ function MatchForm({
             }))
           }
         />
+        <div className="grid gap-2">
+        <Label htmlFor="endgame-notes">Endgame notes</Label>
         <Textarea
+          id="endgame-notes"
           value={form.endgameNotes}
           onChange={(event) =>
             setForm((current) => ({ ...current, endgameNotes: event.target.value }))
           }
-          placeholder="Endgame notes"
+          placeholder="Describe the climb or other endgame behavior."
           aria-label="Endgame notes"
         />
+        </div>
       </FormSection>
       <FormSection title="Match result">
         {officialResult ? <div className="grid gap-1">
@@ -677,6 +703,7 @@ function MatchForm({
               key={tag}
               type="button"
               variant={form.tags.includes(tag) ? "default" : "outline"}
+              aria-pressed={form.tags.includes(tag)}
               onClick={() => toggleTag(tag)}
             >
               {tag}
@@ -694,8 +721,8 @@ function MatchForm({
 
 function FormSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="grid gap-3 rounded-xl border bg-card p-4">
-      <h3 className="border-b pb-3 text-sm font-semibold tracking-tight">{title}</h3>
+    <div className="grid gap-4 rounded-xl border bg-card p-4 sm:p-5">
+      <h3 className="border-b pb-3 text-base font-semibold tracking-tight">{title}</h3>
       {children}
     </div>
   )
@@ -715,12 +742,13 @@ function OptionGroup({
   return (
     <div className="grid gap-2">
       <p className="text-sm font-medium">{label}</p>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div role="group" aria-label={label} className={cn("grid grid-cols-2 gap-2", options.length > 2 && "sm:grid-cols-4")}>
         {options.map((option) => (
           <Button
             key={option}
             type="button"
             variant={value === option ? "default" : "outline"}
+            aria-pressed={value === option}
             className="h-11"
             onClick={() => onChange(option)}
           >

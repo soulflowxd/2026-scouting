@@ -81,11 +81,13 @@ async function fixture() {
 }
 
 test("only admins choose participants and generate event-scoped assignments", async () => {
-  const { t, admin, scout, eventId, memberId, pendingId } = await fixture()
+  const { t, admin, scout, eventId, memberId, subId, pendingId } = await fixture()
   await expect(scout.mutation(api.scoutAssignments.setParticipant, { eventId, memberId, included: true })).rejects.toThrow("Unauthorized")
   await expect(scout.mutation(api.scoutAssignments.generate, { eventId })).rejects.toThrow("Unauthorized")
   await expect(scout.query(api.scoutAssignments.adminList, { eventId })).rejects.toThrow("Unauthorized")
   await expect(admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId: pendingId, included: true })).rejects.toThrow("approved")
+  await admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId, included: false })
+  await admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId: subId, included: false })
   await expect(admin.mutation(api.scoutAssignments.generate, { eventId })).rejects.toThrow("Include at least")
   await admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId, included: true })
   await admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId, included: true })
@@ -108,6 +110,7 @@ test("manual editing allows overlapping groups without a cap, but validates rost
   expect((await scout.query(api.scoutAssignments.mine, { eventId })).teams).toEqual([{ teamNumber: 1, label: "10014R" }])
   await admin.mutation(api.scoutAssignments.assignTeam, { eventId, teamNumber: 2, memberId })
   expect((await scout.query(api.scoutAssignments.mine, { eventId })).matchAssignments).toHaveLength(1)
+  await admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId: subId, included: false })
   await expect(admin.mutation(api.scoutAssignments.assignTeam, { eventId, teamNumber: 2, memberId: subId })).rejects.toThrow("included")
   await expect(admin.mutation(api.scoutAssignments.assignTeam, { eventId, teamNumber: 999, memberId })).rejects.toThrow("not found")
   await expect(scout.mutation(api.scoutAssignments.assignTeam, { eventId, teamNumber: 1, memberId: null })).rejects.toThrow("Unauthorized")
@@ -123,7 +126,8 @@ test("manual editing allows overlapping groups without a cap, but validates rost
 })
 
 test("scouts are restricted to assigned teams while existing claims and handoffs stay valid", async () => {
-  const { admin, scout, sub, eventId, memberId } = await fixture()
+  const { admin, scout, sub, eventId, memberId, subId } = await fixture()
+  await admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId: subId, included: false })
   await admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId, included: true })
   await admin.mutation(api.scoutAssignments.assignTeam, { eventId, teamNumber: 1, memberId })
   await admin.mutation(api.scoutAssignments.setEnabled, { eventId, enabled: true })
@@ -138,7 +142,35 @@ test("scouts are restricted to assigned teams while existing claims and handoffs
   await sub.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "accept" })
   await scout.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "confirm" })
   expect(await sub.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 1 })).toBe(claimId)
-  await sub.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: 1, autoFuel: 0, teleopFuel: 0, autoClimb: "none", autoNotes: "", teleopNotes: "", endgameClimb: "none", endgameNotes: "", driverRating: 5, defenseRating: 5, tags: [] })
+  await sub.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: 1, autoFuel: 0, teleopFuel: 0, autoClimb: "none", autoNotes: "", autoPath: [[{ x: 100, y: 200 }]], teleopNotes: "", endgameClimb: "none", endgameNotes: "", driverRating: 5, defenseRating: 5, tags: [] })
   await admin.mutation(api.scoutAssignments.setEnabled, { eventId, enabled: false })
   await scout.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 2, teamNumber: 2 })
+})
+
+test("approved people join automatically and event-specific exclusions survive approvals and regeneration", async () => {
+  const { t, admin, eventId, memberId, subId, pendingId } = await fixture()
+  expect((await admin.query(api.scoutAssignments.adminList, { eventId })).participants).toEqual([memberId, subId])
+  await admin.mutation(api.scoutAssignments.generate, { eventId })
+  // A new approval immediately joins an already-generated event, without an admin page visit.
+  await t.run(ctx => ctx.db.patch(pendingId, { approvalStatus: "approved" }))
+  const newcomer = t.withIdentity({ tokenIdentifier: "pending", subject: "pending", issuer: "test", email: "pending@example.com" })
+  expect((await newcomer.query(api.scoutAssignments.mine, { eventId })).matchAssignments).toHaveLength(1)
+  await admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId: pendingId, included: false })
+  await admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId: pendingId, included: false })
+  await t.run(async ctx => {
+    await ctx.db.patch(pendingId, { approvalStatus: "pending" })
+    await ctx.db.patch(pendingId, { approvalStatus: "approved" })
+  })
+  await admin.mutation(api.scoutAssignments.generate, { eventId })
+  expect((await newcomer.query(api.scoutAssignments.mine, { eventId })).matchAssignments).toEqual([])
+  expect((await admin.query(api.scoutAssignments.adminList, { eventId })).participants).not.toContain(pendingId)
+  const otherEvent = await t.run(ctx => ctx.db.insert("events", { eventKey: "2026other", importStatus: "ready", createdByToken: "admin" }))
+  expect((await admin.query(api.scoutAssignments.adminList, { eventId: otherEvent })).participants).toContain(pendingId)
+  await admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId: pendingId, included: true })
+  expect((await newcomer.query(api.scoutAssignments.mine, { eventId })).matchAssignments).toHaveLength(1)
+  await t.run(async ctx => {
+    await ctx.db.patch(pendingId, { approvalStatus: "rejected" })
+    await ctx.db.patch(subId, { mergedInto: memberId })
+  })
+  expect((await admin.query(api.scoutAssignments.adminList, { eventId })).participants).toEqual([memberId])
 })

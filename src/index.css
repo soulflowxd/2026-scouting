@@ -1,4 +1,3 @@
-@import "@fontsource-variable/geist";
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -30,8 +29,8 @@
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(0.99 0.004 106);
+  --radius: 0.75rem;
+  --background: oklch(0.975 0.002 260);
   --foreground: oklch(0.18 0.018 258);
   --card: oklch(1 0 0);
   --card-foreground: var(--foreground);
@@ -39,12 +38,12 @@
   --popover-foreground: var(--foreground);
   --primary: oklch(0.51 0.18 253);
   --primary-foreground: oklch(0.98 0.006 255);
-  --secondary: oklch(0.93 0.018 106);
+  --secondary: oklch(0.94 0.004 260);
   --secondary-foreground: oklch(0.22 0.021 258);
   --muted: oklch(0.95 0.011 248);
   --muted-foreground: oklch(0.48 0.027 258);
-  --accent: oklch(0.91 0.039 172);
-  --accent-foreground: oklch(0.23 0.041 171);
+  --accent: var(--muted);
+  --accent-foreground: var(--foreground);
   --destructive: oklch(0.57 0.21 27);
   --border: oklch(0.89 0.012 248);
   --input: oklch(0.89 0.012 248);
@@ -64,8 +63,8 @@
   --secondary-foreground: oklch(0.94 0.008 248);
   --muted: oklch(0.25 0.022 258);
   --muted-foreground: oklch(0.72 0.026 248);
-  --accent: oklch(0.34 0.06 172);
-  --accent-foreground: oklch(0.91 0.04 172);
+  --accent: var(--secondary);
+  --accent-foreground: var(--foreground);
   --destructive: oklch(0.68 0.18 23);
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 16%);
@@ -79,6 +78,7 @@
 
   html {
     color-scheme: light;
+    scroll-padding-top: 5rem;
   }
 
   html.dark {
@@ -90,18 +90,70 @@
     margin: 0;
     min-width: 320px;
     min-height: 100svh;
-    font-family: "Geist Variable", system-ui, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  :where(button, a, select, summary, [role="button"], [tabindex]):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
+  }
+
+  :where(input, textarea, select) {
+    scroll-margin-block: 5rem 2rem;
+    accent-color: var(--primary);
+  }
+
+  :where(select) {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  :where(summary) {
+    padding-block: 0.25rem;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 25%, transparent);
   }
 }
 
-@media (pointer: coarse) {
-  button, [role="button"], select, input:not([type="checkbox"]):not([type="radio"]) {
+@media (pointer: coarse), (max-width: 767px) {
+  button, [role="button"], summary, [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], select, input:not([type="checkbox"]):not([type="radio"]) {
     min-height: 44px;
   }
   button, [role="button"], a, select { touch-action: manipulation; }
-  [data-slot="button"] { min-width: 44px; }
+  button, [role="button"] { min-width: 44px; }
+  select, input:not([type="checkbox"]):not([type="radio"]), textarea {
+    font-size: max(1rem, 16px);
+  }
+  [data-slot="tabs-list"] { min-height: 50px; }
+  nav a { min-height: 44px; }
 }
 
 [data-slot="dialog-content"], [data-slot="sheet-content"] {
   overscroll-behavior: contain;
+}
+
+[data-slot="dropdown-menu-item"], [data-slot="dropdown-menu-radio-item"], [data-slot="dropdown-menu-checkbox-item"], [data-slot="select-item"] {
+  padding-inline-start: 0.625rem;
+}
+
+@media (pointer: fine) and (min-width: 768px) {
+  [data-slot="dropdown-menu-item"], [data-slot="dropdown-menu-radio-item"], [data-slot="dropdown-menu-checkbox-item"], [data-slot="select-item"] { min-height: 2rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root { --border: oklch(0.6 0.01 258); --input: var(--border); --muted-foreground: oklch(0.37 0.02 258); }
+  .dark { --border: oklch(0.65 0.01 258); --input: var(--border); --muted-foreground: oklch(0.85 0.01 258); }
 }

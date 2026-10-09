@@ -81,9 +81,9 @@ export function EventSetupRoute() {
   if (!isAdmin) {
     return (
       <section className="rounded-xl border bg-card p-5">
-        <h1 className="text-xl font-semibold">Event Setup</h1>
+        <h1 className="text-xl font-semibold">Event setup</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Admin only. Add your email to `ADMIN_EMAILS` in Convex ENV.
+          Only admins can manage events. Ask a scouting admin if you need access.
         </p>
       </section>
     )
@@ -92,9 +92,9 @@ export function EventSetupRoute() {
   return (
     <section className="grid gap-5">
       <div>
-        <h1 className="text-2xl font-semibold">Event Setup</h1>
+        <h1 className="text-2xl font-semibold">Event setup</h1>
         <p className="text-sm text-muted-foreground">
-          API keys live in Convex ENV. Enter only the event key here.
+          Select an event, manage scouting access, or import a TBA event.
         </p>
       </div>
       <form onSubmit={onImport} className="grid gap-4 rounded-xl border bg-card p-4">
