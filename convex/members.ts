@@ -229,6 +229,35 @@ export const setApproval = mutation({
       throw new ConvexError("Only the super admin can change an admin account")
     }
     if (member.mergedInto) throw new ConvexError("Account has been archived")
+    if (args.status === "rejected" && member.approvalStatus === "pending") {
+      // Retain an invisible tombstone to block still-valid access tokens and
+      // preserve historical ownership, while removing the actual login account.
+      if (member.authUserId) {
+        const linkedMembers = await ctx.db.query("members").withIndex("by_authUserId", q => q.eq("authUserId", member.authUserId)).take(201)
+        if (linkedMembers.length > 200 || linkedMembers.some(row => row._id !== member._id && !row.mergedInto)) throw new ConvexError("Resolve linked accounts before deleting this request")
+        const sessions = await ctx.db.query("authSessions").withIndex("userId", q => q.eq("userId", member.authUserId!)).take(201)
+        const accounts = await ctx.db.query("authAccounts").withIndex("userIdAndProvider", q => q.eq("userId", member.authUserId!)).take(201)
+        if (sessions.length > 200 || accounts.length > 200) throw new ConvexError("Account cleanup exceeds the safe batch size")
+        for (const session of sessions) {
+          const tokens = await ctx.db.query("authRefreshTokens").withIndex("sessionId", q => q.eq("sessionId", session._id)).take(201)
+          if (tokens.length > 200) throw new ConvexError("Session cleanup exceeds the safe batch size")
+          for (const token of tokens) await ctx.db.delete(token._id)
+          await ctx.db.delete(session._id)
+        }
+        for (const account of accounts) {
+          const codes = await ctx.db.query("authVerificationCodes").withIndex("accountId", q => q.eq("accountId", account._id)).take(201)
+          if (codes.length > 200) throw new ConvexError("Account cleanup exceeds the safe batch size")
+          for (const code of codes) await ctx.db.delete(code._id)
+          await ctx.db.delete(account._id)
+        }
+        await ctx.db.delete(member.authUserId)
+      }
+      const subscriptions = await ctx.db.query("pushSubscriptions").withIndex("by_recipientToken", q => q.eq("recipientToken", member.tokenIdentifier)).take(201)
+      if (subscriptions.length > 200) throw new ConvexError("Device cleanup exceeds the safe batch size")
+      for (const subscription of subscriptions) await ctx.db.delete(subscription._id)
+      await ctx.db.patch(member._id, { approvalStatus: "rejected", approvalNoticePending: false, mergedInto: member._id, approvedByToken: admin.tokenIdentifier })
+      return null
+    }
     const newlyApproved = args.status === "approved" && member.approvalStatus !== "approved"
     await ctx.db.patch(args.memberId, {
       approvalStatus: args.status,

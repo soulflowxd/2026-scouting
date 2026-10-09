@@ -58,7 +58,7 @@ export function AdminRoute() {
     setWorkingId(memberId)
     try {
       await setApproval({ memberId, status })
-      toast.success(status === "approved" ? "Account approved" : "Account access denied")
+      toast.success(status === "approved" ? "Account approved" : members?.find(member => member._id === memberId)?.approvalStatus === "pending" ? "Signup request and login account deleted" : "Account disabled")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not update account")
     } finally {
@@ -203,7 +203,7 @@ export function AdminRoute() {
                     disabled={working}
                   >
                     <X aria-hidden="true" />
-                    {member.approvalStatus === "pending" ? "Deny" : "Disable"}
+                    {member.approvalStatus === "pending" ? "Reject and delete" : "Disable"}
                   </Button>
                 )}
                 {me?.isSuperAdmin &&
