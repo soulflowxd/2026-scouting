@@ -6,5 +6,10 @@
   "display": "standalone",
   "background_color": "#0b1118",
   "theme_color": "#0b1118",
-  "icons": [{ "src": "/itkan-logo.png", "sizes": "1600x1600", "type": "image/png", "purpose": "any" }]
+  "icons": [
+    { "src": "/app-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/app-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/app-icon-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/app-icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
 }
