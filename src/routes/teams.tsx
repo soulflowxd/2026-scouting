@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { AutoPath } from "@/components/auto-path"
 import { PitPhotos } from "@/components/pit-photos"
+import { MatchVideoLink } from "@/components/match-video"
 import { TeamAvatar } from "@/components/team-avatar"
 import { useTeamColors } from "@/lib/team-colors"
 import { pitMeasurements } from "@/lib/pit-measurements"
@@ -378,6 +379,10 @@ export function TeamDetailDialog({
             </div>
             <div className="grid gap-2">
               <h2 className="font-medium">Match reports</h2>
+              {!!detail.matchVideos?.length && <section aria-label="Match videos" className="grid gap-2 pb-2">
+                <h3 className="text-sm font-medium">Match videos</h3>
+                <div className="flex flex-wrap gap-2">{detail.matchVideos.map(video => <MatchVideoLink key={video.matchNumber} videoUrl={video.videoUrl} matchNumber={video.matchNumber} label={`QM${video.matchNumber} video`} />)}</div>
+              </section>}
               {detail.matchReports.length ? (
                 detail.matchReports.map((report) => (
                   <div key={report._id} className="rounded-lg border p-3 text-sm">

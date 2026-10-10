@@ -79,6 +79,12 @@ redirects here; keep project guidance here rather than duplicating it.
   the selected qualification match. Keep robot cycles, activities, ratings, and
   breakdown observations scout-entered. Retain manual results when TBA is
   unavailable or unposted; never invent TBA match keys for custom events.
+- Match videos are Google Drive file links attached to individual event matches.
+  Approved admins may add, replace, or remove links, including after scouting
+  closes; enforce this on the backend and validate HTTPS Drive file URLs.
+  Preserve links when refreshing schedules. Show videos on Matches and in team
+  details for the robots in that match, even without scouting reports. Drive
+  viewing permissions stay managed in Drive; saving a link grants no access.
 - Keep external statistics tied to the selected event and current year. Never
   substitute another year's EPA when current-year data is unavailable.
 - Preserve independent in-season and offseason/all xP scopes.

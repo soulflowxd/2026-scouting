@@ -96,6 +96,7 @@ export default defineSchema({
     .index("by_eventId", ["eventId"])
     .index("by_eventId_and_teamNumber", ["eventId", "teamNumber"]),
   matches: defineTable({
+    videoUrl: v.optional(v.string()),
     completionReviewAt: v.optional(v.number()),
     completionAssignments: v.optional(v.array(v.object({ teamNumber: v.number(), scoutToken: v.string(), scoutName: v.string() }))),
     tbaResult: v.optional(tbaResultValidator),

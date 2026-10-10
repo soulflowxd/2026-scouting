@@ -23,6 +23,28 @@ const tagAllowlist = new Set([
   "Strong climber",
 ])
 
+export const saveVideoLink = mutation({
+  args: { matchId: v.id("matches"), videoUrl: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requireAdminFromDb(ctx)
+    const match = await ctx.db.get(args.matchId)
+    if (!match || !(await ctx.db.get(match.eventId))) throw new ConvexError("Match not found")
+    const videoUrl = args.videoUrl.trim()
+    if (videoUrl) {
+      let url: URL
+      try { url = new URL(videoUrl) } catch { throw new ConvexError("Paste a valid Google Drive video link") }
+      if (videoUrl.length > 2048 || url.protocol !== "https:" || url.hostname !== "drive.google.com" || url.username || url.password || url.port ||
+          !(/^\/file\/(?:u\/\d+\/)?d\/[a-zA-Z0-9_-]+(?:\/|$)/.test(url.pathname) || (["/open", "/uc"].includes(url.pathname) && /^[a-zA-Z0-9_-]+$/.test(url.searchParams.get("id") ?? "")))) {
+        throw new ConvexError("Paste a Google Drive file link, such as drive.google.com/file/d/…/view")
+      }
+    }
+    // Video references remain editable after scouting closes and survive schedule refreshes.
+    await ctx.db.patch(match._id, { videoUrl: videoUrl || undefined })
+    return null
+  },
+})
+
 export const removeReport = mutation({
   args: { reportId: v.id("matchReports") },
   returns: v.null(),

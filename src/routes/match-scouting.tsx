@@ -9,6 +9,7 @@ import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
 import { Stepper } from "@/components/stepper"
 import { AutoPath, type PathPoint } from "@/components/auto-path"
+import { MatchVideo } from "@/components/match-video"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
@@ -250,6 +251,7 @@ export function MatchScoutingRoute() {
                     selectTeam(match.matchNumber, team)
                   }}
                 />
+                <MatchVideo matchId={match._id} matchNumber={match.matchNumber} videoUrl={match.videoUrl} canEdit={me?.role === "admin"} />
               </article>
             )
           })}
