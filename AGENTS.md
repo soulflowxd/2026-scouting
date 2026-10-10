@@ -79,12 +79,16 @@ redirects here; keep project guidance here rather than duplicating it.
   the selected qualification match. Keep robot cycles, activities, ratings, and
   breakdown observations scout-entered. Retain manual results when TBA is
   unavailable or unposted; never invent TBA match keys for custom events.
-- Match videos are Google Drive file links attached to individual event matches.
-  Approved admins may add, replace, or remove links, including after scouting
-  closes; enforce this on the backend and validate HTTPS Drive file URLs.
-  Preserve links when refreshing schedules. Show videos on Matches and in team
-  details for the robots in that match, even without scouting reports. Drive
-  viewing permissions stay managed in Drive; saving a link grants no access.
+- Match videos stay on Google Drive. Approved admins connect one HTTPS Drive
+  folder per event with a filename prefix (for example, `stem gals qm1.mp4`
+  maps to qualification match 1). Discover videos from the public folder listing
+  and its subfolders, refresh while the page is open, and filter by the selected
+  event's prefix and existing qualification schedule. Save only the folder URL
+  and prefix in Convex, never video bytes or discovered per-file metadata. Open
+  videos on Drive from Matches and team details, including without reports.
+  Enforce admin folder edits and approved-user discovery on the backend. Preserve
+  legacy individual links and folder settings during schedule refreshes; folder
+  settings remain editable after scouting closes. Drive manages viewing access.
 - Keep external statistics tied to the selected event and current year. Never
   substitute another year's EPA when current-year data is unavailable.
 - Preserve independent in-season and offseason/all xP scopes.

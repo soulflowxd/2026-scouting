@@ -139,11 +139,15 @@ export const detail = query({
         q.eq("eventId", args.eventId).eq("teamNumber", args.teamNumber),
       )
       .take(200)
-    const matchVideos = (await ctx.db.query("matches")
-      .withIndex("by_eventId", q => q.eq("eventId", args.eventId)).take(500))
+    const eventMatches = await ctx.db.query("matches")
+      .withIndex("by_eventId", q => q.eq("eventId", args.eventId)).take(500)
+    const matchVideos = eventMatches
       .filter(match => match.videoUrl && [...match.redTeams, ...match.blueTeams].includes(args.teamNumber))
       .map(match => ({ matchNumber: match.matchNumber, videoUrl: match.videoUrl! }))
       .sort((a, b) => a.matchNumber - b.matchNumber)
+    const videoMatchNumbers = eventMatches
+      .filter(match => [...match.redTeams, ...match.blueTeams].includes(args.teamNumber))
+      .map(match => match.matchNumber)
     const importedStats = await ctx.db
       .query("externalStats")
       .withIndex("by_eventId_and_teamNumber", (q) =>
@@ -214,6 +218,7 @@ export const detail = query({
       pitReports,
       matchReports,
       matchVideos,
+      videoMatchNumbers,
       stats: stats && args.xpScope && !eventOnly ? {
         ...stats,
         ...{

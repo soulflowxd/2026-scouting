@@ -9,7 +9,9 @@ import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
 import { Stepper } from "@/components/stepper"
 import { AutoPath, type PathPoint } from "@/components/auto-path"
-import { MatchVideo } from "@/components/match-video"
+import { MatchVideoLink } from "@/components/match-video"
+import { MatchVideoFolder } from "@/components/match-video-folder"
+import { useDriveMatchVideos } from "@/lib/drive-match-videos"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
@@ -75,6 +77,7 @@ const emptyMatchForm: MatchFormState = {
 export function MatchScoutingRoute() {
   const me = useQuery(api.members.me)
   const { activeEvent } = useActiveEvent()
+  const driveVideos = useDriveMatchVideos(activeEvent?._id ?? null)
   const myAssignments = useQuery(api.scoutAssignments.mine, activeEvent && me?.approvalStatus === "approved" ? { eventId: activeEvent._id } : "skip")
   const matches = useQuery(
     api.matchScouting.matchesForEvent,
@@ -128,6 +131,7 @@ export function MatchScoutingRoute() {
           {orderedMatches.length} matches
         </div>
       </div>
+      <MatchVideoFolder key={activeEvent._id} eventId={activeEvent._id} settings={driveVideos.settings} canEdit={me?.role === "admin"} loading={driveVideos.loading} count={driveVideos.videos.length} error={driveVideos.error} onRefresh={driveVideos.refresh} />
       {myAssignments?.enabled && <section className="grid gap-3 rounded-xl border border-primary/30 bg-card p-4" aria-label="My scouting assignments">
         <div><h2 className="text-sm font-semibold">Your regular teams: {myAssignments.teams.map(team => team.label).join(", ") || "None assigned yet"}</h2>
           <p className="mt-1 text-xs text-muted-foreground">{myAssignments.teams.length || myAssignments.matchAssignments.length ? "Your group size depends on available scouts. If your teams play together, follow the match assignment below—you may cover a different team." : "Ask an admin to include you and assign your teams. Confirmed substitute handoffs still work."}</p>
@@ -251,7 +255,10 @@ export function MatchScoutingRoute() {
                     selectTeam(match.matchNumber, team)
                   }}
                 />
-                <MatchVideo matchId={match._id} matchNumber={match.matchNumber} videoUrl={match.videoUrl} canEdit={me?.role === "admin"} />
+                {(driveVideos.videos.some(video => video.matchNumber === match.matchNumber) || match.videoUrl) && <div className="flex flex-wrap gap-2 lg:col-span-3">
+                  {driveVideos.videos.filter(video => video.matchNumber === match.matchNumber).map(video => <MatchVideoLink key={video.videoUrl} videoUrl={video.videoUrl} matchNumber={match.matchNumber} label={driveVideos.videos.filter(item => item.matchNumber === match.matchNumber).length > 1 ? video.name : "Watch video"} />)}
+                  {!driveVideos.videos.some(video => video.matchNumber === match.matchNumber) && match.videoUrl && <MatchVideoLink videoUrl={match.videoUrl} matchNumber={match.matchNumber} />}
+                </div>}
               </article>
             )
           })}

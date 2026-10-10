@@ -55,6 +55,8 @@ export default defineSchema({
     .index("by_role", ["role"])
     .index("by_approvalStatus", ["approvalStatus"]),
   events: defineTable({
+    matchVideoFolderUrl: v.optional(v.string()),
+    matchVideoPrefix: v.optional(v.string()),
     scoutAssignmentsEnabled: v.optional(v.boolean()),
     scoutAssignmentSeed: v.optional(v.number()),
     scoutingEnabled: v.optional(v.boolean()),

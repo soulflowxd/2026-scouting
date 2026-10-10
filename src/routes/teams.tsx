@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input"
 import { AutoPath } from "@/components/auto-path"
 import { PitPhotos } from "@/components/pit-photos"
 import { MatchVideoLink } from "@/components/match-video"
+import { useDriveMatchVideos } from "@/lib/drive-match-videos"
 import { TeamAvatar } from "@/components/team-avatar"
 import { useTeamColors } from "@/lib/team-colors"
 import { pitMeasurements } from "@/lib/pit-measurements"
@@ -221,8 +222,13 @@ export function TeamDetailDialog({
   const setPicked = useMutation(api.teams.setPicked)
   const removePitReport = useMutation(api.pit.remove)
   const removeMatchReport = useMutation(api.matchScouting.removeReport)
+  const driveVideos = useDriveMatchVideos(teamNumber === null ? null : eventId)
   const me = useQuery(api.members.me)
   const [savingPicked, setSavingPicked] = useState(false)
+  const teamVideos = [
+    ...driveVideos.videos.filter(video => detail?.videoMatchNumbers?.includes(video.matchNumber)),
+    ...(detail?.matchVideos ?? []).filter(video => !driveVideos.videos.some(item => item.matchNumber === video.matchNumber)),
+  ].sort((a, b) => a.matchNumber - b.matchNumber)
 
   async function togglePicked() {
     if (!detail || teamNumber === null) return
@@ -379,9 +385,9 @@ export function TeamDetailDialog({
             </div>
             <div className="grid gap-2">
               <h2 className="font-medium">Match reports</h2>
-              {!!detail.matchVideos?.length && <section aria-label="Match videos" className="grid gap-2 pb-2">
+              {!!teamVideos.length && <section aria-label="Match videos" className="grid gap-2 pb-2">
                 <h3 className="text-sm font-medium">Match videos</h3>
-                <div className="flex flex-wrap gap-2">{detail.matchVideos.map(video => <MatchVideoLink key={video.matchNumber} videoUrl={video.videoUrl} matchNumber={video.matchNumber} label={`QM${video.matchNumber} video`} />)}</div>
+                <div className="flex flex-wrap gap-2">{teamVideos.map(video => <MatchVideoLink key={video.videoUrl} videoUrl={video.videoUrl} matchNumber={video.matchNumber} label={`QM${video.matchNumber} video`} />)}</div>
               </section>}
               {detail.matchReports.length ? (
                 detail.matchReports.map((report) => (

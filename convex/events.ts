@@ -1,6 +1,29 @@
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import { requireAdminFromDb } from "./lib/authz"
+import { driveFolderUrl } from "./lib/driveVideos"
+
+export const videoSettings = query({
+  args: { eventId: v.id("events") },
+  handler: async (ctx, args) => {
+    const event = await ctx.db.get(args.eventId)
+    return event ? { folderUrl: event.matchVideoFolderUrl, prefix: event.matchVideoPrefix ?? event.name ?? event.eventKey } : null
+  },
+})
+
+export const saveVideoFolder = mutation({
+  args: { eventId: v.id("events"), folderUrl: v.string(), prefix: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requireAdminFromDb(ctx)
+    if (!(await ctx.db.get(args.eventId))) throw new Error("Event not found")
+    const folderUrl = args.folderUrl.trim() ? driveFolderUrl(args.folderUrl) : undefined
+    const prefix = args.prefix.trim()
+    if (folderUrl && (!prefix || prefix.length > 100)) throw new Error("Enter the event name used in video filenames")
+    await ctx.db.patch(args.eventId, { matchVideoFolderUrl: folderUrl, matchVideoPrefix: folderUrl ? prefix : undefined })
+    return null
+  },
+})
 
 export const list = query({
   args: {},
