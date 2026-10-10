@@ -38,6 +38,7 @@ test("completion reports and manual match-finished controls are admin-only", asy
   for (const token of [null, "a", "sub", "pending", "rejected"]) {
     const actor = token ? t.withIdentity({ tokenIdentifier: token }) : t
     await expect(actor.query(api.scoutAssignments.completionReport, { eventId })).rejects.toThrow()
+    await expect(actor.query(api.scoutAssignments.completionReport, { eventId, allMatches: true })).rejects.toThrow()
     await expect(actor.mutation(api.scoutAssignments.openCompletionReview, { eventId, matchNumber: 1 })).rejects.toThrow()
   }
   // Completion checks remain available while submissions are closed.
@@ -119,4 +120,39 @@ test("later team assignments do not rewrite responsibility for finished matches"
   const saved = await t.run(ctx => ctx.db.query("matches").withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", eventId).eq("matchNumber", 2)).unique())
   await admin.mutation(api.scoutAssignments.openCompletionReview, { eventId, matchNumber: 2 })
   expect((await t.run(ctx => ctx.db.get(saved!._id)))?.completionAssignments).toEqual(saved?.completionAssignments)
+})
+
+test("all finished matches includes each overdue robot, excludes unplayed matches, and clears late reports", async () => {
+  const { t, admin, alice, eventId, matchIds } = await fixture()
+  await admin.mutation(api.scoutAssignments.openCompletionReview, { eventId, matchNumber: 1 })
+  let report = await admin.query(api.scoutAssignments.completionReport, { eventId, allMatches: true })
+  expect(report.matchNumber).toBeNull()
+  expect(report.missing.filter(row => row.kind === "match").map(row => row.matchNumber)).toEqual([1, 1])
+  await admin.mutation(api.scoutAssignments.openCompletionReview, { eventId, matchNumber: 2 })
+  await t.run(async ctx => {
+    await ctx.db.insert("matches", { eventId, matchNumber: 3, tbaMatchKey: "2026test_qm3", redTeams: [1], blueTeams: [2] })
+    // A robot without a responsible scout is a separate coverage gap.
+    await ctx.db.patch(matchIds[1], { blueTeams: [2, 3] })
+  })
+  report = await admin.query(api.scoutAssignments.completionReport, { eventId, allMatches: true })
+  expect(report.missing.filter(row => row.kind === "match")).toEqual([
+    { name: "Alice", kind: "match", teamNumber: 1, teamLabel: "1", matchNumber: 1 },
+    { name: "Alice", kind: "match", teamNumber: 1, teamLabel: "1", matchNumber: 2 },
+    { name: "Bob", kind: "match", teamNumber: 2, teamLabel: "10014R", matchNumber: 1 },
+    { name: "Bob", kind: "match", teamNumber: 2, teamLabel: "10014R", matchNumber: 2 },
+  ])
+  expect(report.missing.filter(row => row.kind === "pit")).toHaveLength(1)
+  expect(report.coverageGaps).toEqual([
+    { kind: "match", teamNumber: 3, teamLabel: "3", matchNumber: 2 },
+    { kind: "pit", teamNumber: 3, teamLabel: "3" },
+  ])
+  expect(report.unassignedMatchTeams).toBe(1)
+  expect(report.matches.find(match => match.matchNumber === 3)?.started).toBe(false)
+  const single = await admin.query(api.scoutAssignments.completionReport, { eventId, matchNumber: 1 })
+  expect(single.coverageGaps.every(row => row.kind === "pit")).toBe(true)
+  await alice.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: 1,
+    autoFuel: 0, teleopFuel: 0, autoClimb: "none", autoNotes: "", teleopNotes: "",
+    endgameClimb: "none", endgameNotes: "", driverRating: 5, defenseRating: 5, tags: [] })
+  report = await admin.query(api.scoutAssignments.completionReport, { eventId, allMatches: true })
+  expect(report.missing.filter(row => row.name === "Alice" && row.kind === "match").map(row => row.matchNumber)).toEqual([2])
 })

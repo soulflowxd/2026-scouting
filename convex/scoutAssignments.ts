@@ -19,8 +19,8 @@ export const openCompletionReview = mutation({
 })
 
 export const completionReport = query({
-  args: { ...eventArgs, matchNumber: v.optional(v.number()) },
-  handler: async (ctx, { eventId, matchNumber }) => {
+  args: { ...eventArgs, matchNumber: v.optional(v.number()), allMatches: v.optional(v.boolean()) },
+  handler: async (ctx, { eventId, matchNumber, allMatches }) => {
     await requireAdminFromDb(ctx)
     const context = await assignmentContext(ctx, eventId)
     if (!context.event) throw new ConvexError("Event not found")
@@ -35,22 +35,29 @@ export const completionReport = query({
     const startedReviews = reviews.filter(review => review.started)
     const selectedNumber = matchNumber ?? startedReviews[startedReviews.length - 1]?.matchNumber
     const selected = matches.find(match => match.matchNumber === selectedNumber)
-    const reviewOpen = reviews.some(review => review.matchNumber === selectedNumber && review.started)
+    const reviewOpen = allMatches ? startedReviews.length > 0 : reviews.some(review => review.matchNumber === selectedNumber && review.started)
+    const reviewedNumbers = new Set(startedReviews.map(review => review.matchNumber))
+    const reviewedMatches = allMatches ? matches.filter(match => reviewedNumbers.has(match.matchNumber)) : selected && reviewOpen ? [selected] : []
     const label = (teamNumber: number) => teams.find(team => team.teamNumber === teamNumber)?.eventTeamAlias || String(teamNumber)
     const memberById = new Map(context.members.map(member => [member._id as string, member]))
     const included = new Set<string>(context.scouts)
     const missing: { name: string; kind: "pit" | "match"; teamNumber: number; teamLabel: string; matchNumber?: number }[] = []
+    const coverageGaps: { kind: "pit" | "match"; teamNumber: number; teamLabel: string; matchNumber?: number }[] = []
     let unassignedPits = 0
     for (const team of teams) {
       const report = await ctx.db.query("pitReports").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", eventId).eq("teamNumber", team.teamNumber)).first()
       if (report) continue
       const group = context.groups.find(group => group.teamNumber === team.teamNumber && included.has(group.scout))
       const owner = group && memberById.get(group.scout)
-      if (!owner) { unassignedPits++; continue }
+      if (!owner) {
+        unassignedPits++
+        coverageGaps.push({ kind: "pit", teamNumber: team.teamNumber, teamLabel: label(team.teamNumber) })
+        continue
+      }
       missing.push({ name: owner.name || owner.email || "Scout", kind: "pit", teamNumber: team.teamNumber, teamLabel: label(team.teamNumber) })
     }
     let unassignedMatchTeams = 0
-    if (selected && reviewOpen) {
+    for (const selected of reviewedMatches) {
       const reports = await ctx.db.query("matchReports").withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", eventId).eq("matchNumber", selected.matchNumber)).take(500)
       const completed = new Set(reports.map(report => report.teamNumber))
       const claims = (await ctx.db.query("matchRobotClaims").withIndex("by_eventId_and_matchNumber_and_teamNumber_and_status", q => q.eq("eventId", eventId).eq("matchNumber", selected.matchNumber)).take(500)).filter(claim => claim.status === "active")
@@ -59,12 +66,17 @@ export const completionReport = query({
       for (const teamNumber of new Set([...selected.redTeams, ...selected.blueTeams])) {
         if (completed.has(teamNumber)) continue
         const name = owners.get(teamNumber)
-        if (!name) { unassignedMatchTeams++; continue }
+        if (!name) {
+          unassignedMatchTeams++
+          coverageGaps.push({ kind: "match", teamNumber, teamLabel: label(teamNumber), matchNumber: selected.matchNumber })
+          continue
+        }
         missing.push({ name, kind: "match", teamNumber, teamLabel: label(teamNumber), matchNumber: selected.matchNumber })
       }
     }
-    missing.sort((a, b) => a.name.localeCompare(b.name) || a.kind.localeCompare(b.kind) || a.teamNumber - b.teamNumber)
-    return { matches: reviews, matchNumber: selected?.matchNumber ?? null, reviewOpen, missing, unassignedPits, unassignedMatchTeams }
+    missing.sort((a, b) => a.name.localeCompare(b.name) || a.kind.localeCompare(b.kind) || (a.matchNumber ?? 0) - (b.matchNumber ?? 0) || a.teamNumber - b.teamNumber)
+    coverageGaps.sort((a, b) => a.kind.localeCompare(b.kind) || (a.matchNumber ?? 0) - (b.matchNumber ?? 0) || a.teamNumber - b.teamNumber)
+    return { eventName: context.event.name || context.event.eventKey, matches: reviews, matchNumber: allMatches ? null : selected?.matchNumber ?? null, reviewOpen, missing, coverageGaps, unassignedPits, unassignedMatchTeams }
   },
 })
 

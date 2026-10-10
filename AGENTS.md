@@ -51,6 +51,12 @@ redirects here; keep project guidance here rather than duplicating it.
 
 ## Scouting Behavior
 
+- Admin missing-report lists support all, match-only, and pit-only filters,
+  all finished matches or one match, and copying the complete filtered list.
+  Include event, scout, team alias, and match number in exports. Keep unassigned
+  coverage gaps separate from named scouts' missing submissions. Exclude
+  unplayed matches and preserve saved responsibilities and confirmed handoffs.
+
 - Save pit and match submissions durably in the device's IndexedDB outbox before
   clearing forms. Include pit photo files, scope queued data to the deployment
   and canonical scout, and upload automatically while that scout is signed in
