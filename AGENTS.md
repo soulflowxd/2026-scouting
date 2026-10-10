@@ -100,6 +100,19 @@ redirects here; keep project guidance here rather than duplicating it.
   EPA/xP for regular teams must be labeled as team stats, not NTX results.
   Leave unavailable event RP and standings blank. NTX roster updates are
   additive and idempotent; preserve existing teams and scouting data.
+- STEM Gals (`2026txmck`) uses FIRST event TXMCK rather than TBA. Import its
+  verified roster and qualification schedule with `scripts/load-stem-gals.mjs`
+  into an explicitly named deployment. Keep FIRST match identifiers distinct
+  from TBA keys. Regular-team EPA/xP are current-year team stats; event RP,
+  ranks, and records come from FIRST rankings, refreshed every five minutes.
+  Leave unposted rankings blank and preserve posted rankings during outages.
+  Rankings refreshes must not overwrite EPA/xP or their independent scopes.
+- Prefer the official Statbotics API for EPA. When unavailable, use the
+  manifest and compressed data files at
+  `https://blobs-statbotics.popcornpenguins.com`, the data source for the
+  supplied `https://statbotics.popcornpenguins.com` mirror. Validate the year
+  and event on fallback rows; keep demo/second-robot restrictions intact.
+  Never substitute mirror season RP for selected-event FIRST rankings.
 - Rebellious 9994 is the same NTX robot as 10014R, not an additional team.
   Keep the duplicate archived and recoverable rather than deleting reports.
 - Admins control scouting submissions per event in Event setup. Enforce closed
@@ -122,8 +135,15 @@ redirects here; keep project guidance here rather than duplicating it.
 ## Rank Teams And Navigation
 
 - Keep mobile-only UI redesigns behind responsive breakpoints. The pick-list
-  landing page retains its original full-width desktop layout at 768px and up;
-  use the compact landing-page layout only on smaller screens.
+  landing page stays full-width at 768px and up, with compact creation controls,
+  shared/personal lists side by side, and collapsible admin consensus tools.
+  Let the landing page scroll normally; never clip its content between fixed
+  panels. Use the compact mobile landing layout only on smaller screens.
+- Laptop pick-list boards need readable team cards and stats. Keep tier columns
+  at least 24rem wide with horizontal scrolling and buttons to jump between
+  tiers; do not squeeze all five tiers into narrow columns. Keep the board
+  header compact and full cards visible on short screens. Preserve mobile tier
+  selection, drag-and-drop, search, team details, picked status, and shared Elo.
 - Rank Teams uses a shared, event-scoped Elo leaderboard from approved scouts'
   votes in Convex. Pick-list cards show the same shared Elo. Do not revert to
   device-only rankings or automatically import old local votes. Scouts may
@@ -150,6 +170,11 @@ redirects here; keep project guidance here rather than duplicating it.
   completion and report failures accurately.
 - Keep API keys and deployment credentials in environment variables. Never
   commit `.env` files, paste secrets into source, or print credentials in logs.
+- FIRST API credentials belong in server-side `FIRST_API_USERNAME` and
+  `FIRST_API_AUTH_TOKEN` environment variables, never in browser bundles.
+- Keep the current production site serving while a replacement builds and
+  passes verification. Preserve backward-compatible backend APIs and avoid
+  restarting the running preview or clearing live data during a UI deployment.
 - Missing Convex deployment configuration requires project/environment setup;
   do not silently create or select a different backend.
 

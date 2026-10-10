@@ -27,7 +27,7 @@ import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { eventLabel, useActiveEvent } from "@/lib/active-event"
+import { useActiveEvent } from "@/lib/active-event"
 import { tierLabels } from "@/lib/labels"
 import { TeamDetailDialog } from "@/routes/teams"
 import { TeamAvatar } from "@/components/team-avatar"
@@ -132,14 +132,14 @@ export function PickListsRoute() {
 
   if (selectedList) {
     return (
-      <section className="flex h-[calc(100svh-5.5rem)] min-h-0 flex-col gap-4 overflow-hidden sm:h-[calc(100svh-6.5rem)]">
+      <section className="flex h-[calc(100svh-5.5rem)] min-h-0 flex-col gap-4 overflow-hidden sm:h-[calc(100svh-6.5rem)] md:h-[calc(100svh-7rem)] md:gap-3">
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-          <div className="min-w-0">
+          <div className="min-w-0 md:flex md:items-center md:gap-3">
             <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedListId(null)}>
               <ArrowLeft aria-hidden="true" />
               Pick list home
             </Button>
-            <h1 className="mt-2 truncate text-2xl font-semibold">{selectedList.name}</h1>
+            <h1 className="mt-2 truncate text-2xl font-semibold md:mt-0">{selectedList.name}</h1>
           </div>
           <span className="shrink-0 rounded-md bg-muted/50 px-2 py-1 text-[11px] text-muted-foreground">
             {selectedList.kind === "primary" ? "Main · admin editing only" : "Personal"}
@@ -244,42 +244,57 @@ export function PickListsRoute() {
         </div>
       </details>}
     </section>
-    <section className="hidden h-[calc(100svh-6.5rem)] min-h-0 flex-col gap-4 overflow-hidden md:flex" aria-label="Pick lists desktop">
-      <div className="shrink-0 rounded-xl border bg-card p-4 shadow-sm">
-        <p className="flex items-center gap-2 text-sm text-muted-foreground"><ClipboardList className="size-4" aria-hidden="true" />Pick Lists</p>
-        <h1 className="mt-2 text-3xl font-semibold">Build personal boards and merge the best one.</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{eventLabel(activeEvent)}</p>
-        <div className="mt-4 grid grid-cols-[minmax(0,1fr)_minmax(12rem,2fr)] gap-2">
-          <Input aria-label="New personal list name" value={newName} onChange={event => setNewName(event.target.value)} placeholder="Drive team list" />
-          <Button type="button" disabled={!newName.trim()} onClick={() => void onCreatePersonal()}><Plus aria-hidden="true" />New personal</Button>
+    <section className="hidden w-full gap-6 pb-6 md:grid" aria-label="Pick lists desktop">
+      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight">Pick lists</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{activeEvent.name || activeEvent.eventKey}</p>
         </div>
-      </div>
-      <div className="grid min-h-0 flex-1 grid-cols-2 gap-4 overflow-hidden">
+        <form onSubmit={event => { event.preventDefault(); if (newName.trim()) void onCreatePersonal() }} className="flex flex-wrap items-center gap-2">
+          <Input className="w-56" aria-label="New personal list name" value={newName} onChange={event => setNewName(event.target.value)} placeholder="Drive team list" />
+          <Button type="submit" disabled={!newName.trim()}><Plus aria-hidden="true" />Create personal list</Button>
+        </form>
+      </header>
+      <div className="grid grid-cols-2 items-start gap-5">
+        <section className="grid gap-3">
+          <h2 className="text-sm font-semibold">Shared board</h2>
         <button type="button" onClick={() => {
           if (primaryList) setSelectedListId(primaryList._id)
           else void onEnsurePrimary()
-        }} className="grid min-h-48 content-end rounded-xl border bg-card p-4 text-left shadow-sm transition-colors hover:bg-muted/40">
-          <ClipboardList className="size-6 text-muted-foreground" aria-hidden="true" />
-          <div className="mt-10"><h2 className="text-lg font-semibold">Primary pick list</h2><p className="mt-1 text-sm text-muted-foreground">View the shared main board. Only admins can edit it.</p></div>
+        }} className="group flex min-h-36 w-full items-center gap-4 rounded-xl border bg-card p-5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <ClipboardList className="size-6 shrink-0 text-primary" aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-lg font-semibold">Primary pick list</span>
+            <span className="mt-1 block text-sm text-muted-foreground">View the shared main board. Only admins can edit it.</span>
+          </span>
+          <ChevronRight className="size-5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" aria-hidden="true" />
         </button>
-        <div className="grid min-h-48 rounded-xl border bg-card p-4 shadow-sm">
-          {personalLists.length ? <div className="grid content-start gap-2 overflow-y-auto pr-1">
-            {personalLists.map(list => <button key={list._id} type="button" onClick={() => setSelectedListId(list._id)} className="rounded-lg border bg-background px-3 py-2 text-left text-sm font-medium shadow-sm transition-colors hover:bg-muted">{list.name}</button>)}
-          </div> : <div className="grid place-items-center text-center text-sm font-medium text-muted-foreground">Create a personal pick list above to open a full-screen board.</div>}
-        </div>
+        </section>
+        <section className="grid min-w-0 gap-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold">Personal lists<span className="text-xs font-normal tabular-nums text-muted-foreground">{personalLists.length}</span></h2>
+          {personalLists.length ? <div className="divide-y overflow-hidden rounded-xl border bg-card">
+            {personalLists.map(list => <button key={list._id} type="button" onClick={() => setSelectedListId(list._id)} className="flex min-h-14 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+              <span className="min-w-0 break-words">{list.name}</span><ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            </button>)}
+          </div> : <div className="flex min-h-36 flex-col justify-center rounded-xl border border-dashed p-5">
+            <p className="text-sm font-medium">No personal lists yet</p>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground">Create a list above to start ranking teams on your own board.</p>
+          </div>}
+        </section>
       </div>
-      <div className="shrink-0 rounded-xl border bg-card p-4 shadow-sm">
-        <div className="flex items-start gap-2"><GitMerge className="mt-0.5 size-5 text-muted-foreground" aria-hidden="true" /><div><h2 className="font-semibold">Consensus merge</h2><p className="text-sm text-muted-foreground">Select personal boards to preview or apply to primary.</p></div></div>
-        <div className="mt-4 grid gap-3">
-          <select aria-label="Personal boards for consensus" className="h-9 rounded-lg border border-input bg-background px-3 text-sm">
-            {personalLists.length ? personalLists.map(list => <option key={list._id} value={list._id}>{list.name}</option>) : <option>No personal pick lists</option>}
-          </select>
-          <div className="grid grid-cols-2 gap-2">
-            <Button type="button" variant="ghost" disabled={me?.role !== "admin" || !personalLists.length} onClick={() => void onRunConsensus()}>Preview</Button>
-            <Button type="button" disabled={me?.role !== "admin" || !latestConsensus} onClick={() => void onApplyConsensus()}>Apply to primary</Button>
+      {me?.role === "admin" && <details className="group border-t pt-4">
+        <summary className="flex w-fit cursor-pointer list-none items-center gap-2 rounded-md py-1 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+          <GitMerge className="size-4 text-muted-foreground" aria-hidden="true" />Consensus merge
+          <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" aria-hidden="true" />
+        </summary>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+          <p className="max-w-prose text-sm text-muted-foreground">{personalLists.length ? `Combine ${personalLists.length} personal ${personalLists.length === 1 ? "list" : "lists"} into a shared ranking. Preview it before applying to primary.` : "Create personal lists to preview a combined ranking for the primary board."}</p>
+          <div className="flex shrink-0 gap-2">
+            <Button type="button" variant="outline" disabled={!personalLists.length} onClick={() => void onRunConsensus()}>Preview</Button>
+            <Button type="button" disabled={!latestConsensus} onClick={() => void onApplyConsensus()}>Apply to primary</Button>
           </div>
         </div>
-      </div>
+      </details>}
     </section>
     </>
   )
@@ -325,6 +340,7 @@ function PickBoard({
   const [savingTeam, setSavingTeam] = useState<number | null>(null)
   const [teamSearch, setTeamSearch] = useState("")
   const [mobileTier, setMobileTier] = useState<Tier>("uncategorized")
+  const columnRefs = useRef<Partial<Record<Tier, HTMLDivElement | null>>>({})
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, {
@@ -471,10 +487,10 @@ function PickBoard({
     >
       <div className="flex min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden">
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-muted-foreground">Tap a team for reports and breakdowns.</p>
-          <p className="hidden text-xs text-muted-foreground sm:block">
-            {ownTeamNumber === undefined ? "Ask an admin to assign your team number for standings comparisons." : ownEventRank === undefined ? `Event rank for team ${ownTeamNumber} is unavailable. Refresh event stats to load standings.` : `Your team ${ownTeamNumber} is ranked #${ownEventRank}. Higher-ranked teams are flagged, but can go anywhere in your list.`}
-          </p>
+          <div className="grid gap-1">
+            <p className="text-xs text-muted-foreground"><span className="sm:hidden">Tap a team for reports and breakdowns.</span><span className="hidden sm:inline">{readOnly ? "Click a team for reports and breakdowns." : "Drag teams between tiers · Click a team for reports."}</span></p>
+            {ownEventRank !== undefined && <p className="hidden text-xs text-muted-foreground sm:block">Your team {ownTeamNumber} is ranked #{ownEventRank}. Higher-ranked teams are flagged.</p>}
+          </div>
           <div className="relative w-full sm:w-64">
             <Search
               className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -490,14 +506,19 @@ function PickBoard({
             />
           </div>
         </div>
+        <nav aria-label="Jump to pick-list tier" className="hidden shrink-0 flex-wrap gap-1 sm:flex">
+          {columns.map(tier => <Button key={tier} type="button" variant="secondary" size="sm" onClick={() => columnRefs.current[tier]?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" })}>
+            {tierLabels[tier]}<span className="ml-1 text-xs tabular-nums text-muted-foreground">{boardItems.filter(item => item.tier === tier).length}</span>
+          </Button>)}
+        </nav>
         <label className="grid shrink-0 gap-1 text-xs font-medium sm:hidden">Tier
           <select className="min-h-11 rounded-lg border bg-card px-3 text-base" value={mobileTier} onChange={event => setMobileTier(event.target.value as Tier)}>
             {columns.map(tier => <option key={tier} value={tier}>{tierLabels[tier]} · {boardItems.filter(item => item.tier === tier).length}</option>)}
           </select>
         </label>
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 pb-1 sm:grid-cols-[repeat(5,minmax(12rem,1fr))] sm:overflow-x-auto">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 pb-2 sm:grid-cols-[repeat(5,minmax(24rem,1fr))] sm:overflow-x-auto">
           {columns.map((tier) => (
-            <div key={tier} className={`min-h-0 ${mobileTier === tier ? "block" : "hidden"} sm:block`}>
+            <div key={tier} ref={node => { columnRefs.current[tier] = node }} className={`min-h-0 ${mobileTier === tier ? "block" : "hidden"} sm:block`}>
             <PickColumn
               key={tier}
               tier={tier}
@@ -574,10 +595,10 @@ function PickColumn({
   return (
     <section
       ref={setNodeRef}
-      className="grid h-full min-h-0 grid-rows-[auto_1fr] gap-2 rounded-xl border bg-card p-3"
+      className="grid h-full min-h-0 grid-rows-[auto_1fr] gap-2 rounded-xl border bg-card p-3 md:gap-3"
     >
       <div className="flex items-center justify-between">
-        <h2 className="font-medium">{tierLabels[tier]}</h2>
+        <h2 className="font-medium md:text-base md:font-semibold">{tierLabels[tier]}</h2>
         <span className="text-xs text-muted-foreground">{items.length}</span>
       </div>
       <SortableContext
@@ -672,7 +693,7 @@ function PickCard({
         setNodeRef(node)
       }}
       style={{ transform: isDragging ? undefined : CSS.Transform.toString(transform), transition }}
-      className={`relative grid gap-2 rounded-lg border bg-background p-3 pt-5 text-sm shadow-sm transition-colors ${
+      className={`relative grid gap-2 rounded-lg border bg-background p-3 pt-5 text-sm transition-colors md:p-4 md:pt-5 ${
         isDragging ? "opacity-60 ring-2 ring-primary" : ""
       } ${
         isSearchActive && isSearchMatch
@@ -691,8 +712,8 @@ function PickCard({
           <div className="flex items-center gap-2">
           <TeamAvatar teamNumber={item.teamNumber} />
           <div className="min-w-0 break-words">
-          <p className="font-semibold">{item.eventTeamAlias ?? item.teamNumber}</p>
-          <p className="text-muted-foreground">{item.nickname}</p>
+          <p className="font-semibold md:text-xl">{item.eventTeamAlias ?? item.teamNumber}</p>
+          <p className="text-muted-foreground md:text-base">{item.nickname}</p>
           </div>
           </div>
         </button>
@@ -714,8 +735,8 @@ function PickCard({
           { label: "xP", value: item.xp },
         ].map(({ label, value }) => (
           <div key={label} className="min-w-0 text-center">
-            <dt className="text-[11px] font-medium text-muted-foreground">{label}</dt>
-            <dd className="text-sm font-semibold tabular-nums">
+            <dt className="text-[11px] font-medium text-muted-foreground md:text-xs">{label}</dt>
+            <dd className="text-sm font-semibold tabular-nums md:text-lg">
               {value === undefined ? "—" : value.toFixed(label === "RP" ? 2 : 1)}
             </dd>
           </div>
@@ -728,17 +749,22 @@ function PickCard({
           {columns.map(tier => <option key={tier} value={tier}>{tierLabels[tier]}</option>)}
         </select>
       </label>}
-      {item.eventRank !== undefined && <p className="text-xs text-muted-foreground">Event rank #{item.eventRank}</p>}
-      <p className="text-xs text-muted-foreground">Shared Mash Elo: <span className="font-semibold tabular-nums text-foreground">{item.mashElo === undefined ? "Unranked" : Math.round(item.mashElo)}</span></p>
+      <div className="grid gap-1 md:flex md:flex-wrap md:items-center md:justify-between md:gap-2">
+        {item.eventRank !== undefined && <p className="text-xs text-muted-foreground md:text-sm">Event rank #{item.eventRank}</p>}
+        <p className="text-xs text-muted-foreground md:text-sm">Shared Elo: <span className="font-semibold tabular-nums text-foreground">{item.mashElo === undefined ? "Unranked" : Math.round(item.mashElo)}</span></p>
+      </div>
       {item.higherRankedThanOwnTeam && <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-700 dark:text-amber-300">Ranked above your team ({item.ownTeamNumber}) · still available to rank</p>}
-      {me?.role === "admin" ? <Button type="button" variant={item.picked ? "secondary" : "outline"} size="sm" onClick={onPicked} disabled={savingPicked} aria-pressed={item.picked} aria-label={`${item.picked ? "Undo picked for" : "Mark picked"} team ${item.teamNumber}`}>
+      <div className="contents md:flex md:items-center md:justify-between md:gap-3 md:border-t md:pt-2">
+      {me?.role === "admin" ? <Button type="button" className="md:order-2" variant={item.picked ? "secondary" : "outline"} size="sm" onClick={onPicked} disabled={savingPicked} aria-pressed={item.picked} aria-label={`${item.picked ? "Undo picked for" : "Mark picked"} team ${item.teamNumber}`}>
         {item.picked ? "Picked · Undo" : "Mark picked"}
       </Button> : item.picked ? <p className="text-xs text-muted-foreground">Picked · unavailable</p> : null}
-      <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+      <div className={`grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted-foreground ${!item.pitScouted && item.averageDriverRating === 0 && item.averageTeleopFuel === 0 && item.commonEndgameClimb === "No reports" ? "md:hidden" : ""}`}>
         <span>{item.pitScouted ? "Pit done" : "No pit"}</span>
         <span>Driver {item.averageDriverRating}</span>
         <span>Fuel {item.averageTeleopFuel}</span>
         <span>{item.commonEndgameClimb}</span>
+      </div>
+      {!item.pitScouted && item.averageDriverRating === 0 && item.averageTeleopFuel === 0 && item.commonEndgameClimb === "No reports" && <p className="hidden text-xs text-muted-foreground md:block">No scouting reports yet</p>}
       </div>
     </div>
   )

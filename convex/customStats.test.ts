@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test"
+import { deflateSync } from "node:zlib"
 import { expect, test, vi } from "vitest"
 import { internal } from "./_generated/api"
 import schema from "./schema"
@@ -73,5 +74,39 @@ test("FIRST rankings preserve EPA/xP, stay event-scoped, and retain posted RP du
     const stats = await t.run(ctx => ctx.db.query("externalStats").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", eventId)).take(10))
     expect(stats).toHaveLength(1)
     expect(stats[0]).toMatchObject({ teamNumber: 10340, averageRp: 4.67, eventRank: 1, epa: 43, xp: 46, xpSeason: { xp: 46 }, xpAll: { xp: 51 } })
+  } finally { vi.unstubAllGlobals(); vi.unstubAllEnvs() }
+})
+
+test("STEM Gals falls back to mirror EPA for the selected year without demo or RP fallbacks", async () => {
+  const t = convexTest(schema, modules)
+  const eventId = await t.run(async ctx => {
+    const id = await ctx.db.insert("events", { eventKey: "2026txmck", importStatus: "ready", createdByToken: "test" })
+    for (const teamNumber of [10340, 9128, 9992]) await ctx.db.insert("teams", { eventId: id, teamNumber, nickname: "Test", tbaTeamKey: `frc${teamNumber}` })
+    return id
+  })
+  const blob = deflateSync(JSON.stringify({ year: { year: 2026 }, team_years: [
+    { team: 10340, year: 2026, epa: { total_points: 177.88, breakdown: { auto_points: 41.64, teleop_points: 101.66, endgame_points: 34.58 } }, record: { qual: { rps_per_match: 5 } } },
+    { team: 9128, year: 2025, epa: { total_points: 999 } },
+    { team: 9992, year: 2026, epa: { total_points: 999 } },
+  ] }))
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url.startsWith("https://api.statbotics.io/")) return new Response(null, { status: 503 })
+    if (url.endsWith("/manifest.json")) return new Response(JSON.stringify({ blobs: { "team_years/2026": "v2/team_years/2026.test" } }))
+    if (url.endsWith("/2026.test")) return new Response(blob)
+    if (url.includes("/rankings/TXMCK")) return new Response(JSON.stringify({ Rankings: [] }))
+    throw new Error(`Unexpected request: ${url}`)
+  })
+  vi.stubGlobal("fetch", fetchMock)
+  vi.stubEnv("TBA_API_KEY", "")
+  vi.stubEnv("MATCH13_API_KEY", "")
+  vi.stubEnv("FIRST_API_USERNAME", "test")
+  vi.stubEnv("FIRST_API_AUTH_TOKEN", "test")
+  try {
+    await t.action(internal.imports.refreshStatsInternal, { eventId })
+    const stats = await t.run(ctx => ctx.db.query("externalStats").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", eventId)).take(10))
+    expect(stats.find(row => row.teamNumber === 10340)).toMatchObject({ epa: 177.88, autoEpa: 41.64, teleopEpa: 101.66, endgameEpa: 34.58 })
+    expect(stats.filter(row => row.teamNumber !== 10340).every(row => row.epa === undefined)).toBe(true)
+    expect(stats.every(row => row.averageRp === undefined)).toBe(true)
+    expect(fetchMock.mock.calls.some(([url]) => url.includes("/team_year/9992/"))).toBe(false)
   } finally { vi.unstubAllGlobals(); vi.unstubAllEnvs() }
 })

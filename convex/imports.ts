@@ -1,6 +1,7 @@
 "use node";
 
 import { v } from "convex/values"
+import { inflateSync } from "node:zlib"
 import { internal } from "./_generated/api"
 import { action, internalAction } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
@@ -118,6 +119,25 @@ async function fetchText(url: string) {
   const response = await fetch(url)
   if (!response.ok) throw new Error(`${url} failed: ${response.status}`)
   return await response.text()
+}
+
+async function fetchMirrorStats(eventKey: string, year: number, teamNumbers: Set<number>, teamYearOnly: boolean): Promise<StatboticsTeamEvent[]> {
+  const base = "https://blobs-statbotics.popcornpenguins.com"
+  const manifestResponse = await fetch(`${base}/manifest.json`, { signal: AbortSignal.timeout(15000) })
+  if (!manifestResponse.ok) throw new Error("Statbotics mirror manifest unavailable")
+  const manifest: { blobs?: Record<string, string> } = await manifestResponse.json()
+  const eventPath = !teamYearOnly ? manifest.blobs?.[`event/${eventKey}`] : undefined
+  const path = eventPath ?? manifest.blobs?.[`team_years/${year}`]
+  if (!path || !/^v\d+\/[a-zA-Z0-9_/.=-]+$/.test(path) || path.includes("..")) return []
+  const response = await fetch(`${base}/${path}`, { signal: AbortSignal.timeout(15000) })
+  if (!response.ok) throw new Error("Statbotics mirror data unavailable")
+  const data: { year?: number | { year?: number }; team_events?: StatboticsTeamEvent[]; team_years?: StatboticsTeamEvent[] } = JSON.parse(
+    inflateSync(Buffer.from(await response.arrayBuffer()), { maxOutputLength: 16 * 1024 * 1024 }).toString("utf8"),
+  )
+  if ((typeof data.year === "number" ? data.year : data.year?.year) !== year) return []
+  const rows = eventPath ? data.team_events : data.team_years
+  if (!Array.isArray(rows)) return []
+  return rows.filter(row => Number(row.year) === year && teamNumbers.has(Number(row.team)) && (!eventPath || row.event === eventKey))
 }
 
 function finiteNumber(value: unknown) {
@@ -454,6 +474,13 @@ export const refreshStatsInternal = internalAction({
           : []
       } catch {
         statboticsTeamRows = []
+      }
+    }
+    if (statboticsTeamRows.length === 0 && statboticsYear) {
+      try {
+        statboticsTeamRows = await fetchMirrorStats(eventKey, statboticsYear, teamNumbers, teamYearOnly)
+      } catch {
+        // Mirror outages leave the official API and archive fallbacks available.
       }
     }
     if (statboticsTeamRows.length === 0 && !teamYearOnly) {
