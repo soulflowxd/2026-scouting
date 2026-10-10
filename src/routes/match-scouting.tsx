@@ -201,6 +201,8 @@ export function MatchScoutingRoute() {
           )}
           {orderedMatches.map((match) => {
             const isSelected = matchNumber === match.matchNumber
+            const matchVideos = driveVideos.videos.filter(video => video.matchNumber === match.matchNumber)
+            if (!matchVideos.length && match.videoUrl) matchVideos.push({ matchNumber: match.matchNumber, name: `QM${match.matchNumber} video`, videoUrl: match.videoUrl })
             return (
               <article
                 key={match._id}
@@ -209,7 +211,8 @@ export function MatchScoutingRoute() {
                   isSelected && "bg-primary/[0.045]",
                 )}
               >
-                <div className="flex items-center justify-between gap-3 lg:block">
+                <div className="flex items-center justify-between gap-3 lg:grid lg:justify-start lg:gap-1">
+                  <div className="grid gap-1">
                   <div className="flex items-center gap-2">
                     <span className="text-base font-semibold tracking-tight">
                       QM{match.matchNumber}
@@ -230,6 +233,10 @@ export function MatchScoutingRoute() {
                       })}
                     </span>
                   )}
+                  </div>
+                  {!!matchVideos.length && <div className="flex flex-wrap items-center gap-x-3 lg:gap-x-2">
+                    {matchVideos.map((video, index) => <MatchVideoLink key={video.videoUrl} videoUrl={video.videoUrl} matchNumber={match.matchNumber} compact label={matchVideos.length > 1 ? `Video ${index + 1}` : "Video"} title={video.name} />)}
+                  </div>}
                 </div>
                 <AllianceRow
                   label="Red alliance"
@@ -255,10 +262,6 @@ export function MatchScoutingRoute() {
                     selectTeam(match.matchNumber, team)
                   }}
                 />
-                {(driveVideos.videos.some(video => video.matchNumber === match.matchNumber) || match.videoUrl) && <div className="flex flex-wrap gap-2 lg:col-span-3">
-                  {driveVideos.videos.filter(video => video.matchNumber === match.matchNumber).map(video => <MatchVideoLink key={video.videoUrl} videoUrl={video.videoUrl} matchNumber={match.matchNumber} label={driveVideos.videos.filter(item => item.matchNumber === match.matchNumber).length > 1 ? video.name : "Watch video"} />)}
-                  {!driveVideos.videos.some(video => video.matchNumber === match.matchNumber) && match.videoUrl && <MatchVideoLink videoUrl={match.videoUrl} matchNumber={match.matchNumber} />}
-                </div>}
               </article>
             )
           })}

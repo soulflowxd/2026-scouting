@@ -89,6 +89,8 @@ redirects here; keep project guidance here rather than duplicating it.
   Enforce admin folder edits and approved-user discovery on the backend. Preserve
   legacy individual links and folder settings during schedule refreshes; folder
   settings remain editable after scouting closes. Drive manages viewing access.
+  Keep match-row video links with the match number/time instead of a separate
+  full-width button row; retain a 44px touch target on mobile.
 - Keep external statistics tied to the selected event and current year. Never
   substitute another year's EPA when current-year data is unavailable.
 - Preserve independent in-season and offseason/all xP scopes.
