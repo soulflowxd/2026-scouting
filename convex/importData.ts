@@ -168,6 +168,34 @@ export const applyEventImport = internalMutation({
   },
 })
 
+export const firstEvents = internalQuery({
+  args: {},
+  handler: async ctx => {
+    const event = await ctx.db.query("events").withIndex("by_eventKey", q => q.eq("eventKey", "2026txmck")).unique()
+    return event ? [event] : []
+  },
+})
+
+export const applyFirstRankings = internalMutation({
+  args: {
+    eventId: v.id("events"),
+    rankings: v.array(v.object({ teamNumber: v.number(), eventRank: v.number(), averageRp: v.number(), wins: v.number(), losses: v.number(), ties: v.number() })),
+  },
+  handler: async (ctx, args) => {
+    const event = await ctx.db.get(args.eventId)
+    if (!event || !/^\d{4}txmck$/.test(event.eventKey)) throw new Error("Unsupported FIRST event")
+    for (const ranking of args.rankings) {
+      const team = await ctx.db.query("teams").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId).eq("teamNumber", ranking.teamNumber)).unique()
+      if (!team) continue
+      const stat = await ctx.db.query("externalStats").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId).eq("teamNumber", ranking.teamNumber)).unique()
+      // Rankings refresh independently of EPA/xP; never replace their snapshot.
+      if (stat) await ctx.db.patch(stat._id, ranking)
+      else await ctx.db.insert("externalStats", { eventId: args.eventId, refreshedAt: Date.now(), ...ranking })
+    }
+    return null
+  },
+})
+
 export const applyStatsRefresh = internalMutation({
   args: {
     eventId: v.id("events"),
@@ -210,6 +238,8 @@ export const applyStatsRefresh = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
+    const event = await ctx.db.get(args.eventId)
+    const firstEvent = event && /^\d{4}txmck$/.test(event.eventKey)
     for (const stat of args.stats) {
       const existing = await ctx.db
         .query("externalStats")
@@ -217,7 +247,13 @@ export const applyStatsRefresh = internalMutation({
           q.eq("eventId", args.eventId).eq("teamNumber", stat.teamNumber),
         )
         .unique()
-      const doc = { eventId: args.eventId, refreshedAt: args.refreshedAt, ...stat }
+      const doc = omitUndefined({
+        eventId: args.eventId, refreshedAt: args.refreshedAt, ...stat,
+        ...(firstEvent && existing ? {
+          averageRp: existing.averageRp, eventRank: existing.eventRank,
+          wins: existing.wins, losses: existing.losses, ties: existing.ties,
+        } : {}),
+      })
       // Replace custom-event snapshots so unavailable season/event fields cannot
       // survive from an earlier import and masquerade as NTX results.
       if (existing && (args.teamYearOnly || stat.eventOnly)) await ctx.db.replace(existing._id, doc)

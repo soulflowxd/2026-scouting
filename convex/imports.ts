@@ -377,8 +377,8 @@ export const refreshStatsInternal = internalAction({
 
     const tbaKey = readEnv("TBA_API_KEY")
     const eventKey = eventData.eventKey
-    // NTX is a manually maintained event, not a TBA event.
-    const teamYearOnly = /^\d{4}ntx$/.test(eventKey)
+    // NTX and FIRST-sourced STEM Gals have no TBA event statistics.
+    const teamYearOnly = /^\d{4}(ntx|txmck)$/.test(eventKey)
     if (!tbaKey && !teamYearOnly) throw new Error("Missing TBA_API_KEY")
     const tbaHeaders = { "X-TBA-Auth-Key": tbaKey }
     const event: TbaEvent = teamYearOnly ? {} : await fetchJson<TbaEvent>(
@@ -705,6 +705,14 @@ export const refreshStatsInternal = internalAction({
       predictions,
     })
 
+    if (/^\d{4}txmck$/.test(eventKey)) {
+      try {
+        await ctx.runAction(internal.firstRankings.refreshEvent, args)
+      } catch (error) {
+        // FIRST outages must not discard available EPA/xP or prior rankings.
+        console.warn(error instanceof Error ? error.message : "FIRST rankings unavailable")
+      }
+    }
     return {
       statsCount: eventData.teams.length,
       predictionCount: predictions.length,

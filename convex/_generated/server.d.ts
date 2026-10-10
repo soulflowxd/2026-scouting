@@ -26,6 +26,8 @@ import type { DataModel } from "./dataModel.js";
  */
 type Env = {
   readonly ADMIN_EMAILS: string | undefined;
+  readonly FIRST_API_AUTH_TOKEN: string | undefined;
+  readonly FIRST_API_USERNAME: string | undefined;
   readonly JWKS: string | undefined;
   readonly JWT_PRIVATE_KEY: string | undefined;
   readonly MATCH13_API_KEY: string | undefined;

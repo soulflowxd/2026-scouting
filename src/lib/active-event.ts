@@ -8,8 +8,11 @@ const selectedEventChanged = "scouting:selected-event-changed"
 
 export function eventLabel(event: Pick<Doc<"events">, "eventKey" | "name">) {
   const label = event.name ? `${event.name} (${event.eventKey})` : event.eventKey
+  if (/^\d{4}txmck$/.test(event.eventKey)) {
+    return `${label} · EPA/xP: ${event.eventKey.slice(0, 4)} team stats · RP: FIRST rankings when posted`
+  }
   return /^\d{4}ntx$/.test(event.eventKey)
-    ? `${label} · EPA/xP: ${event.eventKey.slice(0, 4)} team stats, not NTX results · Event RP unavailable`
+    ? `${label} · EPA/xP: ${event.eventKey.slice(0, 4)} team stats · Event RP unavailable`
     : label
 }
 

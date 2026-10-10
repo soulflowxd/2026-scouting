@@ -7,6 +7,8 @@ const app = defineApp({
     STATBOTICS_API_KEY: v.optional(v.string()),
     NEXUS_API_KEY: v.optional(v.string()),
     MATCH13_API_KEY: v.optional(v.string()),
+    FIRST_API_USERNAME: v.optional(v.string()),
+    FIRST_API_AUTH_TOKEN: v.optional(v.string()),
     ADMIN_EMAILS: v.optional(v.string()),
     SITE_URL: v.optional(v.string()),
     VAPID_PUBLIC_KEY: v.optional(v.string()),
