@@ -6,9 +6,9 @@ import type { Doc, Id } from "../../convex/_generated/dataModel"
 const selectedEventKey = "scouting:selectedEventId"
 const selectedEventChanged = "scouting:selected-event-changed"
 
-export function eventLabel(event: Pick<Doc<"events">, "eventKey" | "name">) {
+export function eventLabel(event: Pick<Doc<"events">, "eventKey" | "name" | "firstEventCode">) {
   const label = event.name ? `${event.name} (${event.eventKey})` : event.eventKey
-  if (/^\d{4}txmck$/.test(event.eventKey)) {
+  if (event.firstEventCode || /^\d{4}txmck$/.test(event.eventKey)) {
     return `${label} · EPA/xP: ${event.eventKey.slice(0, 4)} team stats · RP: FIRST rankings when posted`
   }
   return /^\d{4}ntx$/.test(event.eventKey)

@@ -89,11 +89,12 @@ test("folder settings are admin-only, event scoped, and retain no video files", 
   const scout = t.withIdentity({ tokenIdentifier: "video-scout", subject: "video-scout", issuer: "test" })
   await expect(scout.mutation(api.events.saveVideoFolder, { eventId, folderUrl, prefix: "stem gals" })).rejects.toThrow("Unauthorized")
   await admin.mutation(api.events.saveVideoFolder, { eventId, folderUrl, prefix: "stem gals" })
-  expect(await t.query(api.events.videoSettings, { eventId })).toEqual({ folderUrl: "https://drive.google.com/drive/folders/root-folder", prefix: "stem gals" })
+  expect(await t.query(api.events.videoSettings, { eventId })).toEqual({ folderUrl: "https://drive.google.com/drive/folders/root-folder", prefix: "stem gals", allowBare: false })
   expect((await t.query(api.events.videoSettings, { eventId: otherEventId }))?.folderUrl).toBeUndefined()
   const fetchMock = vi.fn(async () => new Response(listing([
     { id: "video-one", name: "stem gals qm1.mp4", video: true },
     { id: "wrong-event", name: "ntx qm1.mp4", video: true },
+    { id: "bare", name: "qm1.mp4", video: true },
     { id: "not-scheduled", name: "stem gals qm2.mp4", video: true },
   ])))
   vi.stubGlobal("fetch", fetchMock)
@@ -128,6 +129,21 @@ test("reads videos through nested folders, ignores other events, and sees newly 
   added = true
   expect((await readDriveVideos(folderUrl, "stem gals", new Set([1, 2]))).map(video => video.matchNumber)).toEqual([1, 2])
   expect(fetchMock.mock.calls.every(([url]) => url.hostname === "drive.google.com" && url.pathname === "/embeddedfolderview")).toBe(true)
+})
+
+test("other events accept bare qualification filenames and retain legacy prefixed videos", async () => {
+  const { t, admin, otherEventId } = await setup()
+  await admin.mutation(api.events.saveVideoFolder, { eventId: otherEventId, folderUrl, prefix: "ntx" })
+  expect(await t.query(api.events.videoSettings, { eventId: otherEventId })).toMatchObject({ allowBare: true })
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(listing([
+    { id: "bare", name: "QM01.mp4", video: true },
+    { id: "legacy", name: "ntx qm1.mp4", video: true },
+    { id: "wrong", name: "stem gals qm1.mp4", video: true },
+    { id: "unscheduled", name: "qm2.mp4", video: true },
+  ]))))
+  expect((await admin.action(api.matchVideos.listFromDrive, { eventId: otherEventId })).map(video => video.name)).toEqual(["ntx qm1.mp4", "QM01.mp4"])
+  expect(videoMatchNumber("qm1", "ntx", true)).toBe(1)
+  for (const name of ["qm0.mp4", "qm1 notes.mp4", "qm1.mp4.exe", "finals1.mp4"]) expect(videoMatchNumber(name, "ntx", true)).toBeNull()
 })
 
 test("Drive parsing rejects sign-in pages, unsafe URLs, and confusing filenames", () => {

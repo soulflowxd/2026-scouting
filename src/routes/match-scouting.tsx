@@ -394,6 +394,7 @@ function MatchForm({
   const [tbaStatus, setTbaStatus] = useState("loading")
   const side = tbaMatch?.redTeams.includes(teamNumber) ? "red" : tbaMatch?.blueTeams.includes(teamNumber) ? "blue" : null
   const officialResult = side ? tbaMatch?.tbaResult?.[side] : undefined
+  const officialSource = tbaMatch?.firstEventCode || tbaMatch?.officialResultSource === "first" ? "FIRST" : "TBA"
   useEffect(() => {
     let active = true
     const refresh = () => { void refreshTba({ eventId, matchNumber }).then(status => { if (active) setTbaStatus(status) }).catch(() => { if (active) setTbaStatus("unavailable") }) }
@@ -565,7 +566,7 @@ function MatchForm({
         </div>
       </details>}
       <FormSection title="Autonomous">
-        {officialResult?.wonAuto !== undefined ? <p className="text-sm font-medium">TBA: {officialResult.tiedAuto ? "Auto fuel tied" : officialResult.wonAuto ? "Won auto" : "Lost auto"} · {officialResult.autoAllianceFuel}–{officialResult.opponentAutoFuel} fuel</p> : <>
+        {officialResult?.wonAuto !== undefined ? <p className="text-sm font-medium">{officialSource}: {officialResult.tiedAuto ? "Auto fuel tied" : officialResult.wonAuto ? "Won auto" : "Lost auto"} · {officialResult.autoAllianceFuel}–{officialResult.opponentAutoFuel} fuel</p> : <>
         <Button type="button" variant={form.wonAuto ? "default" : "outline"} aria-pressed={form.wonAuto}
           onClick={() => setForm(current => ({ ...current, wonAuto: !current.wonAuto }))}>
           {form.wonAuto && <Check aria-hidden="true" />}Won auto
@@ -668,7 +669,7 @@ function MatchForm({
       <FormSection title="Match result">
         {officialResult ? <div className="grid gap-1">
           <p className="text-sm font-semibold">{officialResult.tiedMatch ? "Tied match" : officialResult.wonMatch ? "Won match" : "Lost match"} · {officialResult.totalMatchPoints} alliance points</p>
-          <a className="text-xs text-primary underline" href={`https://www.thebluealliance.com/match/${tbaMatch!.tbaMatchKey}`} target="_blank" rel="noreferrer">Automatically synced from The Blue Alliance</a>
+          <a className="text-xs text-primary underline" href={tbaMatch!.resultUrl} target="_blank" rel="noreferrer">Automatically synced from {officialSource === "FIRST" ? "FIRST" : "The Blue Alliance"}</a>
           <p className="text-xs text-muted-foreground">Robot cycles and activities still come from your observations.</p>
         </div> : <>
         <Button type="button" variant={form.wonMatch ? "default" : "outline"} aria-pressed={form.wonMatch}
@@ -678,7 +679,7 @@ function MatchForm({
         <Stepper id="totalMatchPoints" label="Total alliance match points" max={9999} value={form.totalMatchPoints}
           onChange={totalMatchPoints => setForm(current => ({ ...current, totalMatchPoints }))} />
         <p className="text-xs text-muted-foreground">Enter the alliance’s final score, not this robot’s individual points.</p>
-        <p className="text-xs text-muted-foreground">{tbaStatus === "manual" ? "This event uses manual results." : tbaStatus === "loading" ? "Checking TBA for match results…" : tbaStatus === "unavailable" ? "TBA is unavailable. You can enter results manually; we’ll retry automatically." : "TBA results haven’t posted yet. Enter results manually or keep scouting; they’ll sync when available."}</p>
+        <p className="text-xs text-muted-foreground">{tbaStatus === "manual" ? "This event uses manual results." : tbaStatus === "loading" ? `Checking ${officialSource} for match results…` : tbaStatus === "unavailable" ? `${officialSource} is unavailable. You can enter results manually; we’ll retry automatically.` : `${officialSource} results haven’t posted yet. Enter results manually or keep scouting; they’ll sync when available.`}</p>
         </>}
       </FormSection>
       <FormSection title="Ratings">

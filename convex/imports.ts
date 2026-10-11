@@ -10,6 +10,8 @@ import { match13Stats, scopedMatch13Stats, type Match13Team } from "./lib/match1
 import { tbaAvatars } from "./lib/tbaAvatars"
 import { eventTeamKeys, eventTeamNumber, eventTeamValue } from "./lib/tbaTeamKeys"
 import { needsEventStats } from "./lib/demoTeams"
+import { firstEventReference, importEventReference } from "./lib/firstApi"
+import { fetchFirstImport, syncFirstEvent } from "./firstEvents"
 
 type TbaTeam = {
   key: string
@@ -298,14 +300,28 @@ async function fetchStatboticsCsvRows(
 
 export const importEvent = action({
   args: { eventKey: v.string() },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ eventId: Id<"events">; teamCount: number; matchCount: number }> => {
     const admin: { tokenIdentifier: string } = await ctx.runQuery(
       internal.members.currentAdmin,
       {},
     )
-    const eventKey = args.eventKey.trim().toLowerCase()
+    const reference = importEventReference(args.eventKey)
+    const eventKey = reference.eventKey
+    const firstEventCode: string | null | undefined = reference.firstEventCode ?? await ctx.runQuery(internal.importData.firstEventCodeForKey, { eventKey })
+    if (/^\d{4}ntx$/.test(eventKey)) throw new Error("NTX uses its supplied roster; it is not a FIRST or TBA event")
     const tbaKey = readEnv("TBA_API_KEY")
-    if (!tbaKey) throw new Error("Missing TBA_API_KEY")
+    const importFirst = async (code: string) => {
+      // Fetch and validate the entire response before changing the saved event.
+      const data = await fetchFirstImport(eventKey, code)
+      const eventId: Id<"events"> = await ctx.runMutation(internal.importData.beginImport, { eventKey, createdByToken: admin.tokenIdentifier })
+      await ctx.runMutation(internal.importData.applyEventImport, { eventId, ...data })
+      try { await syncFirstEvent(ctx, eventId) }
+      catch { console.warn("Event imported; FIRST results are temporarily unavailable") }
+      try { await ctx.runAction(internal.imports.refreshStatsInternal, { eventId }) }
+      catch { console.warn("Event imported; external team statistics are temporarily unavailable") }
+      return { eventId, teamCount: data.teams.length, matchCount: data.matches.length }
+    }
+    if (firstEventCode || !tbaKey) return importFirst(firstEventCode ?? eventKey.slice(4).toUpperCase())
 
     const eventId: Id<"events"> = await ctx.runMutation(
       internal.importData.beginImport,
@@ -358,9 +374,13 @@ export const importEvent = action({
         matches: qualMatches,
       })
 
-      await ctx.runAction(internal.imports.refreshStatsInternal, { eventId })
+      // A statistics outage must not change a successfully imported event's provider.
+      try { await ctx.runAction(internal.imports.refreshStatsInternal, { eventId }) }
+      catch { console.warn("Event imported; external team statistics are temporarily unavailable") }
       return { eventId, teamCount: teams.length, matchCount: qualMatches.length }
     } catch (error) {
+      try { return await importFirst(eventKey.slice(4).toUpperCase()) }
+      catch { /* Keep the original import error when neither source is available. */ }
       await ctx.runMutation(internal.importData.markImportError, {
         eventId,
         message: error instanceof Error ? error.message : "Import failed",
@@ -390,6 +410,7 @@ export const refreshStatsInternal = internalAction({
   ): Promise<{ statsCount: number; predictionCount: number }> => {
     const eventData: {
       eventKey: string
+      firstEventCode?: string
       teams: { teamNumber: number; tbaTeamKey: string; nickname?: string; eventTeamAlias?: string }[]
     } | null = await ctx.runQuery(internal.importData.getEventForRefresh, args)
     if (!eventData) throw new Error("Event not found")
@@ -398,7 +419,8 @@ export const refreshStatsInternal = internalAction({
     const tbaKey = readEnv("TBA_API_KEY")
     const eventKey = eventData.eventKey
     // NTX and FIRST-sourced STEM Gals have no TBA event statistics.
-    const teamYearOnly = /^\d{4}(ntx|txmck)$/.test(eventKey)
+    const usesFirst = !!firstEventReference(eventData)
+    const teamYearOnly = /^\d{4}ntx$/.test(eventKey) || usesFirst
     if (!tbaKey && !teamYearOnly) throw new Error("Missing TBA_API_KEY")
     const tbaHeaders = { "X-TBA-Auth-Key": tbaKey }
     const event: TbaEvent = teamYearOnly ? {} : await fetchJson<TbaEvent>(
@@ -732,13 +754,15 @@ export const refreshStatsInternal = internalAction({
       predictions,
     })
 
-    if (/^\d{4}txmck$/.test(eventKey)) {
+    if (usesFirst) {
       try {
         await ctx.runAction(internal.firstRankings.refreshEvent, args)
       } catch (error) {
         // FIRST outages must not discard available EPA/xP or prior rankings.
         console.warn(error instanceof Error ? error.message : "FIRST rankings unavailable")
       }
+      try { await syncFirstEvent(ctx, args.eventId, true) }
+      catch { console.warn("FIRST results unavailable; keeping posted results") }
     }
     return {
       statsCount: eventData.teams.length,

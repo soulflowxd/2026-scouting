@@ -5,14 +5,24 @@ import type { Doc, Id } from "./_generated/dataModel"
 import { requireApprovedUserFromDb } from "./lib/authz"
 import { ensureCompletionReview } from "./lib/scoutingCompletion"
 import { parseTbaResult, reportResult, tbaResultValidator } from "./lib/tbaMatchResult"
+import { firstEventReference, firstJson, firstRecord } from "./lib/firstApi"
+import { parseFirstResult } from "./lib/firstMatchResult"
+
+type OfficialMatch = Doc<"matches"> & { firstYear?: number; firstEventCode?: string; resultUrl: string }
 
 const matchArgs = { eventId: v.id("events"), matchNumber: v.number() }
-async function context(ctx: import("./_generated/server").QueryCtx, args: { eventId: Id<"events">; matchNumber: number }) {
+async function context(ctx: import("./_generated/server").QueryCtx, args: { eventId: Id<"events">; matchNumber: number }): Promise<OfficialMatch | null> {
   const event = await ctx.db.get(args.eventId)
   const match = await ctx.db.query("matches").withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", args.eventId).eq("matchNumber", args.matchNumber)).unique()
   // Custom rosters have no official schedule. Never invent TBA match keys.
-  if (!event || /^\d{4}ntx$/i.test(event.eventKey) || !match || match.tbaMatchKey !== `${event.eventKey}_qm${args.matchNumber}`) return null
-  return match
+  if (!event || /^\d{4}ntx$/i.test(event.eventKey) || !match) return null
+  const first = firstEventReference(event)
+  if (first && match.tbaMatchKey === `first:${event.eventKey}:qm${args.matchNumber}`) return {
+    ...match, firstYear: first.year, firstEventCode: first.code,
+    resultUrl: `https://frc-events.firstinspires.org/${first.year}/${first.code}/qualifications/${args.matchNumber}`,
+  }
+  if (match.tbaMatchKey !== `${event.eventKey}_qm${args.matchNumber}`) return null
+  return { ...match, resultUrl: `https://www.thebluealliance.com/match/${match.tbaMatchKey}` }
 }
 export const forMatch = query({
   args: matchArgs,
@@ -20,12 +30,12 @@ export const forMatch = query({
 })
 export const getContext = internalQuery({ args: matchArgs, handler: context })
 export const applyResult = internalMutation({
-  args: { matchId: v.id("matches"), result: tbaResultValidator },
+  args: { matchId: v.id("matches"), result: tbaResultValidator, source: v.optional(v.union(v.literal("first"), v.literal("tba"))) },
   handler: async (ctx, args) => {
     const match = await ctx.db.get(args.matchId)
     if (!match) return
     await ensureCompletionReview(ctx, match)
-    await ctx.db.patch(match._id, { tbaResult: args.result, tbaCheckedAt: Date.now() })
+    await ctx.db.patch(match._id, { tbaResult: args.result, tbaCheckedAt: Date.now(), officialResultSource: args.source ?? "tba" })
     const reports = await ctx.db.query("matchReports").withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", match.eventId).eq("matchNumber", match.matchNumber)).take(500)
     for (const report of reports) {
       const side = match.redTeams.includes(report.teamNumber) ? "red" : match.blueTeams.includes(report.teamNumber) ? "blue" : null
@@ -34,9 +44,27 @@ export const applyResult = internalMutation({
   },
 })
 
-async function fetchResult(ctx: ActionCtx, match: Doc<"matches"> | null): Promise<string> {
+async function fetchResult(ctx: ActionCtx, match: OfficialMatch | null): Promise<string> {
   if (!match) return "manual"
   if (match.tbaCheckedAt && Date.now() - match.tbaCheckedAt < 60_000) return "cached"
+  if (match.firstEventCode && match.firstYear) {
+    try {
+      const path = `${match.firstYear}/matches/${match.firstEventCode}?tournamentLevel=Qualification&matchNumber=${match.matchNumber}`
+      const data = firstRecord(await firstJson(path))
+      if (!Array.isArray(data.Matches)) return "pending"
+      let details: unknown
+      try {
+        const scoring = firstRecord(await firstJson(`${match.firstYear}/scores/${match.firstEventCode}/Qualification?matchNumber=${match.matchNumber}`))
+        details = Array.isArray(scoring.MatchScores) ? scoring.MatchScores.find(row => firstRecord(row).matchNumber === match.matchNumber) : undefined
+      } catch { /* Total scores can be posted before detailed scoring arrives. */ }
+      const result = parseFirstResult(data.Matches.find(row => firstRecord(row).matchNumber === match.matchNumber), details, match, match.firstYear)
+      if (!result) return "pending"
+      await ctx.runMutation(internal.tbaMatches.applyResult, { matchId: match._id, result: {
+        red: { ...match.tbaResult?.red, ...result.red }, blue: { ...match.tbaResult?.blue, ...result.blue },
+      }, source: "first" })
+      return "updated"
+    } catch { return "unavailable" }
+  }
   const key = env.TBA_API_KEY?.trim()
   if (!key) return "unavailable"
   try {
@@ -53,7 +81,7 @@ async function fetchResult(ctx: ActionCtx, match: Doc<"matches"> | null): Promis
 export const refresh = action({
   args: matchArgs,
   handler: async (ctx, args): Promise<string> => {
-    const match: Doc<"matches"> | null = await ctx.runQuery(api.tbaMatches.forMatch, args)
+    const match: OfficialMatch | null = await ctx.runQuery(api.tbaMatches.forMatch, args)
     return fetchResult(ctx, match)
   },
 })
@@ -61,7 +89,7 @@ export const refresh = action({
 export const refreshAfterReport = internalAction({
   args: { ...matchArgs, attempt: v.number() },
   handler: async (ctx, { attempt, ...args }): Promise<void> => {
-    const match: Doc<"matches"> | null = await ctx.runQuery(internal.tbaMatches.getContext, args)
+    const match: OfficialMatch | null = await ctx.runQuery(internal.tbaMatches.getContext, args)
     const status = await fetchResult(ctx, match)
     if ((status === "pending" || status === "unavailable") && attempt < 12) {
       await ctx.scheduler.runAfter(60_000, internal.tbaMatches.refreshAfterReport, { ...args, attempt: attempt + 1 })

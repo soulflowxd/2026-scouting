@@ -48,15 +48,20 @@ export function normalizeVideoPrefix(value: string) {
   return value.trim().toLowerCase().replace(/[\s_-]+/g, " ")
 }
 
-export function videoMatchNumber(name: string, prefix: string) {
+export function videoMatchNumber(name: string, prefix: string, allowBare = false) {
   const normalized = normalizeVideoPrefix(name.replace(/\.(mp4|mov|m4v|webm|avi|mkv)$/i, ""))
+  const bare = allowBare ? /^qm\s*(\d+)$/.exec(normalized) : null
+  if (bare) {
+    const number = Number(bare[1])
+    return Number.isSafeInteger(number) && number > 0 ? number : null
+  }
   const match = /^(.*?)\s+qm\s*(\d+)$/.exec(normalized)
   const number = match ? Number(match[2]) : NaN
   return match && match[1] === normalizeVideoPrefix(prefix) && Number.isSafeInteger(number) && number > 0 ? number : null
 }
 
 // Fetch folder listing HTML only. Video bytes and file metadata are never persisted.
-export async function readDriveVideos(folderUrl: string, prefix: string, matchNumbers: Set<number>): Promise<DriveVideo[]> {
+export async function readDriveVideos(folderUrl: string, prefix: string, matchNumbers: Set<number>, allowBare = false): Promise<DriveVideo[]> {
   const queue = [{ url: driveFolderUrl(folderUrl), depth: 0 }]
   const visited = new Set<string>()
   const videos: DriveVideo[] = []
@@ -84,7 +89,7 @@ export async function readDriveVideos(folderUrl: string, prefix: string, matchNu
         if (folder.depth >= 3) throw new ConvexError("Choose a folder closer to the match videos; the current folder has too many nested levels.")
         queue.push({ url: entry.url, depth: folder.depth + 1 })
       } else if (entry.video && !fileUrls.has(entry.url)) {
-        const matchNumber = videoMatchNumber(entry.name, prefix)
+        const matchNumber = videoMatchNumber(entry.name, prefix, allowBare)
         if (matchNumber !== null && matchNumbers.has(matchNumber)) {
           fileUrls.add(entry.url)
           videos.push({ matchNumber, name: entry.name, videoUrl: entry.url })

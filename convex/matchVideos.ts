@@ -11,7 +11,7 @@ export const context = internalQuery({
     const event = await ctx.db.get(args.eventId)
     if (!event) throw new ConvexError("Event not found")
     const matches = await ctx.db.query("matches").withIndex("by_eventId", q => q.eq("eventId", args.eventId)).take(500)
-    return { folderUrl: event.matchVideoFolderUrl, prefix: event.matchVideoPrefix ?? event.name ?? event.eventKey, matchNumbers: matches.map(match => match.matchNumber) }
+    return { folderUrl: event.matchVideoFolderUrl, prefix: event.eventKey === "2026txmck" ? "stem gals" : event.matchVideoPrefix ?? event.name ?? event.eventKey, allowBare: event.eventKey !== "2026txmck", matchNumbers: matches.map(match => match.matchNumber) }
   },
 })
 
@@ -21,6 +21,6 @@ export const listFromDrive = action({
   handler: async (ctx, args): Promise<DriveVideo[]> => {
     const settings = await ctx.runQuery(internal.matchVideos.context, args)
     if (!settings.folderUrl) return []
-    return await readDriveVideos(settings.folderUrl, settings.prefix, new Set(settings.matchNumbers))
+    return await readDriveVideos(settings.folderUrl, settings.prefix, new Set(settings.matchNumbers), settings.allowBare)
   },
 })

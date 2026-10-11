@@ -2,6 +2,7 @@ import { v } from "convex/values"
 import { internalMutation, internalQuery } from "./_generated/server"
 import { match13RatingValidator } from "./lib/match13"
 import { requireApprovedUserFromDb } from "./lib/authz"
+import { firstEventReference } from "./lib/firstApi"
 
 export const photoContext = internalQuery({
   args: { eventId: v.id("events"), teamNumber: v.number() },
@@ -33,6 +34,9 @@ export const getEventForRefresh = internalQuery({
       .take(500)
     return {
       eventKey: event.eventKey,
+      firstEventCode: event.firstEventCode,
+      firstTimezone: event.firstTimezone,
+      firstScheduleCheckedAt: event.firstScheduleCheckedAt,
       teams: teams.map((team) => ({
         nickname: team.nickname,
         eventTeamAlias: team.eventTeamAlias,
@@ -108,6 +112,8 @@ export const applyEventImport = internalMutation({
   args: {
     eventId: v.id("events"),
     eventName: v.optional(v.string()),
+    firstEventCode: v.optional(v.string()),
+    firstTimezone: v.optional(v.string()),
     teams: v.array(
       v.object({
         tbaTeamKey: v.string(),
@@ -161,6 +167,9 @@ export const applyEventImport = internalMutation({
 
     await ctx.db.patch(args.eventId, omitUndefined({
       name: args.eventName,
+      firstEventCode: args.firstEventCode,
+      firstTimezone: args.firstTimezone,
+      firstScheduleCheckedAt: args.firstEventCode ? Date.now() : undefined,
       importStatus: "ready",
       importMessage: `Imported ${args.teams.length} teams and ${args.matches.length} qualification matches`,
       importedAt: Date.now(),
@@ -171,8 +180,18 @@ export const applyEventImport = internalMutation({
 export const firstEvents = internalQuery({
   args: {},
   handler: async ctx => {
-    const event = await ctx.db.query("events").withIndex("by_eventKey", q => q.eq("eventKey", "2026txmck")).unique()
-    return event ? [event] : []
+    const events = await ctx.db.query("events").withIndex("by_firstEventCode", q => q.gt("firstEventCode", "")).take(50)
+    const legacy = await ctx.db.query("events").withIndex("by_eventKey", q => q.eq("eventKey", "2026txmck")).unique()
+    if (legacy && !events.some(event => event._id === legacy._id)) events.push(legacy)
+    return events.filter(event => firstEventReference(event))
+  },
+})
+
+export const firstEventCodeForKey = internalQuery({
+  args: { eventKey: v.string() },
+  handler: async (ctx, { eventKey }) => {
+    const event = await ctx.db.query("events").withIndex("by_eventKey", q => q.eq("eventKey", eventKey)).unique()
+    return event ? firstEventReference(event)?.code ?? null : null
   },
 })
 
@@ -183,7 +202,7 @@ export const applyFirstRankings = internalMutation({
   },
   handler: async (ctx, args) => {
     const event = await ctx.db.get(args.eventId)
-    if (!event || !/^\d{4}txmck$/.test(event.eventKey)) throw new Error("Unsupported FIRST event")
+    if (!event || !firstEventReference(event)) throw new Error("Unsupported FIRST event")
     for (const ranking of args.rankings) {
       const team = await ctx.db.query("teams").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId).eq("teamNumber", ranking.teamNumber)).unique()
       if (!team) continue
@@ -239,7 +258,7 @@ export const applyStatsRefresh = internalMutation({
   },
   handler: async (ctx, args) => {
     const event = await ctx.db.get(args.eventId)
-    const firstEvent = event && /^\d{4}txmck$/.test(event.eventKey)
+    const firstEvent = event && firstEventReference(event)
     for (const stat of args.stats) {
       const existing = await ctx.db
         .query("externalStats")

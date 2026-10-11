@@ -2,12 +2,13 @@ import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import { requireAdminFromDb } from "./lib/authz"
 import { driveFolderUrl } from "./lib/driveVideos"
+import { importEventReference } from "./lib/firstApi"
 
 export const videoSettings = query({
   args: { eventId: v.id("events") },
   handler: async (ctx, args) => {
     const event = await ctx.db.get(args.eventId)
-    return event ? { folderUrl: event.matchVideoFolderUrl, prefix: event.matchVideoPrefix ?? event.name ?? event.eventKey } : null
+    return event ? { folderUrl: event.matchVideoFolderUrl, prefix: event.eventKey === "2026txmck" ? "stem gals" : event.matchVideoPrefix ?? event.name ?? event.eventKey, allowBare: event.eventKey !== "2026txmck" } : null
   },
 })
 
@@ -16,9 +17,10 @@ export const saveVideoFolder = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     await requireAdminFromDb(ctx)
-    if (!(await ctx.db.get(args.eventId))) throw new Error("Event not found")
+    const event = await ctx.db.get(args.eventId)
+    if (!event) throw new Error("Event not found")
     const folderUrl = args.folderUrl.trim() ? driveFolderUrl(args.folderUrl) : undefined
-    const prefix = args.prefix.trim()
+    const prefix = event.eventKey === "2026txmck" ? "stem gals" : args.prefix.trim() || event.matchVideoPrefix || event.name || event.eventKey
     if (folderUrl && (!prefix || prefix.length > 100)) throw new Error("Enter the event name used in video filenames")
     await ctx.db.patch(args.eventId, { matchVideoFolderUrl: folderUrl, matchVideoPrefix: folderUrl ? prefix : undefined })
     return null
@@ -47,7 +49,7 @@ export const createOrSelect = mutation({
   args: { eventKey: v.string() },
   handler: async (ctx, args) => {
     const admin = await requireAdminFromDb(ctx)
-    const eventKey = args.eventKey.trim().toLowerCase()
+    const eventKey = args.eventKey.trim().startsWith("https://") ? importEventReference(args.eventKey).eventKey : args.eventKey.trim().toLowerCase()
     if (!/^\d{4}[a-z0-9]+$/.test(eventKey)) {
       throw new Error("Invalid event key")
     }

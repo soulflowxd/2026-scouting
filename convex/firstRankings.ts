@@ -3,6 +3,7 @@
 import { v } from "convex/values"
 import { internal } from "./_generated/api"
 import { internalAction, env } from "./_generated/server"
+import { firstEventReference } from "./lib/firstApi"
 
 export type FirstRanking = {
   teamNumber: number
@@ -14,13 +15,14 @@ export type FirstRanking = {
   ties: number
 }
 
-export async function fetchFirstRankings(eventKey: string): Promise<FirstRanking[]> {
-  if (!/^\d{4}txmck$/.test(eventKey)) throw new Error("Unsupported FIRST event")
+export async function fetchFirstRankings(eventKey: string, firstEventCode?: string): Promise<FirstRanking[]> {
+  const reference = firstEventReference({ eventKey, firstEventCode })
+  if (!reference) throw new Error("Unsupported FIRST event")
   const username = env.FIRST_API_USERNAME
   const token = env.FIRST_API_AUTH_TOKEN
   if (!username || !token) throw new Error("Missing FIRST API credentials")
   const response = await fetch(
-    `https://frc-api.firstinspires.org/v3.0/${eventKey.slice(0, 4)}/rankings/${eventKey.slice(4).toUpperCase()}`,
+    `https://frc-api.firstinspires.org/v3.0/${reference.year}/rankings/${reference.code}`,
     { headers: { Authorization: `Basic ${Buffer.from(`${username}:${token}`).toString("base64")}` }, signal: AbortSignal.timeout(15000) },
   )
   if (!response.ok) throw new Error(`FIRST rankings request failed (${response.status})`)
@@ -39,8 +41,8 @@ export const refreshEvent = internalAction({
   args: { eventId: v.id("events") },
   handler: async (ctx, args): Promise<number> => {
     const event = await ctx.runQuery(internal.importData.getEventForRefresh, args)
-    if (!event || !/^\d{4}txmck$/.test(event.eventKey)) return 0
-    const rankings = await fetchFirstRankings(event.eventKey)
+    if (!event || !firstEventReference(event)) return 0
+    const rankings = await fetchFirstRankings(event.eventKey, event.firstEventCode)
     await ctx.runMutation(internal.importData.applyFirstRankings, {
       eventId: args.eventId,
       rankings: rankings.map(row => ({
@@ -58,7 +60,8 @@ export const refreshStemGals = internalAction({
     const events = await ctx.runQuery(internal.importData.firstEvents, {})
     let count = 0
     for (const event of events) {
-      count += await ctx.runAction(internal.firstRankings.refreshEvent, { eventId: event._id })
+      try { count += await ctx.runAction(internal.firstRankings.refreshEvent, { eventId: event._id }) }
+      catch { console.warn("FIRST rankings unavailable; keeping posted rankings") }
     }
     return count
   },

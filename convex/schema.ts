@@ -55,6 +55,9 @@ export default defineSchema({
     .index("by_role", ["role"])
     .index("by_approvalStatus", ["approvalStatus"]),
   events: defineTable({
+    firstEventCode: v.optional(v.string()),
+    firstTimezone: v.optional(v.string()),
+    firstScheduleCheckedAt: v.optional(v.number()),
     matchVideoFolderUrl: v.optional(v.string()),
     matchVideoPrefix: v.optional(v.string()),
     scoutAssignmentsEnabled: v.optional(v.boolean()),
@@ -75,6 +78,7 @@ export default defineSchema({
     createdByToken: v.string(),
   })
     .index("by_eventKey", ["eventKey"])
+    .index("by_firstEventCode", ["firstEventCode"])
     .index("by_activeAt", ["activeAt"]),
   pickedTeams: defineTable({
     eventId: v.id("events"),
@@ -102,6 +106,7 @@ export default defineSchema({
     completionReviewAt: v.optional(v.number()),
     completionAssignments: v.optional(v.array(v.object({ teamNumber: v.number(), scoutToken: v.string(), scoutName: v.string() }))),
     tbaResult: v.optional(tbaResultValidator),
+    officialResultSource: v.optional(v.union(v.literal("first"), v.literal("tba"))),
     tbaCheckedAt: v.optional(v.number()),
     eventId: v.id("events"),
     tbaMatchKey: v.string(),

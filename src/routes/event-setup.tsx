@@ -94,17 +94,17 @@ export function EventSetupRoute() {
       <div>
         <h1 className="text-2xl font-semibold">Event setup</h1>
         <p className="text-sm text-muted-foreground">
-          Select an event, manage scouting access, or import a TBA event.
+          Select an event, manage scouting access, or import from TBA or FIRST.
         </p>
       </div>
       <form onSubmit={onImport} className="grid gap-4 rounded-xl border bg-card p-4">
         <div className="grid gap-2">
-          <Label htmlFor="eventKey">TBA event key</Label>
+          <Label htmlFor="eventKey">Event key or FIRST event URL</Label>
           <Input
             id="eventKey"
             value={eventKey}
             onChange={(event) => setEventKey(event.target.value)}
-            placeholder="2026nvlv"
+            placeholder="2026txmck or https://frc-events.firstinspires.org/2026/TXMCK/"
           />
         </div>
         <div className="flex flex-wrap gap-2">

@@ -12,7 +12,7 @@ export function useDriveMatchVideos(eventId: Id<"events"> | null) {
   const load = useAction(api.matchVideos.listFromDrive)
   const [state, setState] = useState<VideoState | null>(null)
   const [refreshCount, setRefreshCount] = useState(0)
-  const key = `${eventId}:${settings?.folderUrl}:${settings?.prefix}`
+  const key = `${eventId}:${settings?.folderUrl}:${settings?.prefix}:${settings?.allowBare}`
   useEffect(() => {
     if (!eventId || !settings?.folderUrl) return
     let cancelled = false

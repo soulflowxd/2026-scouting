@@ -81,15 +81,16 @@ redirects here; keep project guidance here rather than duplicating it.
   transfer active claims or bypass the two-person substitute handoff. Enforce
   assignment-only mode on backend claims and new reports, while allowing an
   existing claim owner or confirmed substitute to finish their report.
-- Match scouting automatically syncs available official TBA alliance results for
+- Match scouting automatically syncs available official TBA or FIRST alliance results for
   the selected qualification match. Keep robot cycles, activities, ratings, and
-  breakdown observations scout-entered. Retain manual results when TBA is
-  unavailable or unposted; never invent TBA match keys for custom events.
+  breakdown observations scout-entered. Retain manual results when the official
+  source is unavailable or unposted; never invent TBA match keys for custom events.
 - Match videos stay on Google Drive. Approved admins connect one HTTPS Drive
-  folder per event with a filename prefix (for example, `stem gals qm1.mp4`
-  maps to qualification match 1). Discover videos from the public folder listing
+  folder per event. Other events accept `qm1.mp4`, `qm2.mp4`, and so on, while
+  STEM Gals (`2026txmck`) requires `stem gals qm1.mp4`, never bare `qm1`.
+  Preserve existing prefixed filenames for other events. Discover videos from the public folder listing
   and its subfolders, refresh while the page is open, and filter by the selected
-  event's prefix and existing qualification schedule. Save only the folder URL
+  event's folder, filename rules, and existing qualification schedule. Save only the folder URL
   and prefix in Convex, never video bytes or discovered per-file metadata. Open
   videos on Drive from Matches and team details, including without reports.
   Enforce admin folder edits and approved-user discovery on the backend. Preserve
@@ -118,13 +119,26 @@ redirects here; keep project guidance here rather than duplicating it.
   EPA/xP for regular teams must be labeled as team stats, not NTX results.
   Leave unavailable event RP and standings blank. NTX roster updates are
   additive and idempotent; preserve existing teams and scouting data.
-- STEM Gals (`2026txmck`) uses FIRST event TXMCK rather than TBA. Import its
-  verified roster and qualification schedule with `scripts/load-stem-gals.mjs`
-  into an explicitly named deployment. Keep FIRST match identifiers distinct
-  from TBA keys. Regular-team EPA/xP are current-year team stats; event RP,
+- STEM Gals (`2026txmck`) uses FIRST event TXMCK rather than TBA. Event setup
+  accepts FIRST event URLs and falls back to FIRST when TBA import data is
+  unavailable. Preserve the chosen provider on reimport; a statistics outage
+  must not switch a successful TBA import to FIRST. Import the verified full
+  paginated roster and qualification schedule, preserving reports, claims,
+  video settings, completion snapshots, and scouting state. Convert venue-local
+  schedule times using FIRST's event timezone. Keep FIRST match identifiers
+  distinct from TBA keys and NTX manual. Regular-team EPA/xP are current-year team stats; event RP,
   ranks, and records come from FIRST rankings, refreshed every five minutes.
   Leave unposted rankings blank and preserve posted rankings during outages.
   Rankings refreshes must not overwrite EPA/xP or their independent scopes.
+- Poll configured FIRST events for posted qualification results every minute
+  and refresh schedules at most every five minutes during automatic polling.
+  Mark matches finished only with posted results, valid final scores, and exact
+  matching robot stations; pending matches and unavailable results stay intact.
+  Completion checks include finished matches with no scout submissions. Sync
+  alliance scores/outcomes and verified 2026 autonomous fuel counts, preserving
+  previous verified details during outages. Never substitute total autonomous
+  points for fuel counts or invent unsupported TBA statistics. Show FIRST
+  attribution and FIRST results links for these events.
 - Prefer the official Statbotics API for EPA. When unavailable, use the
   manifest and compressed data files at
   `https://blobs-statbotics.popcornpenguins.com`, the data source for the
