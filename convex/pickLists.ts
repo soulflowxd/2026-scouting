@@ -221,7 +221,7 @@ export const runConsensus = mutation({
 
     const personalIds = new Set(personalLists.map((list) => list._id))
     const personalItems = items.filter((item) => personalIds.has(item.pickListId))
-    const scored = teams.map((team) => {
+    const scored = teams.filter(team => !team.rosterArchived && !team.mergedIntoTeamNumber).map((team) => {
       const votes = personalItems.filter(
         (item) => item.teamNumber === team.teamNumber,
       )

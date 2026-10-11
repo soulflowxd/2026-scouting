@@ -132,24 +132,36 @@ redirects here; keep project guidance here rather than duplicating it.
   display EPA/xP only from the selected event. Do not use season, prior-event,
   or parent-team fallbacks. Hide unverified cached stats until refreshed.
 - Custom event rosters must keep letter-suffixed squads separate from their
-  parent teams. `scripts/load-ntx.mjs` loads the supplied NTX roster into an
+  parent teams. `scripts/load-ntx.mjs` loads the legacy supplied NTX roster into an
   explicitly named deployment. Do not invent schedules or external statistics
   for manually supplied rosters.
 - NTX is not on TBA. Skip TBA event lookups for NTX; available current-year
   EPA/xP for regular teams must be labeled as team stats, not NTX results.
-  Leave unavailable event RP and standings blank. NTX roster updates are
-  additive and idempotent; preserve existing teams and scouting data.
+  NTX (`2026ntx`) now links to FIRST event TXMCK1. Import its official roster,
+  qualification schedule, posted results and rankings into the existing event;
+  never create a separate `2026txmck1` event. Keep FIRST's 999x demo identifiers
+  until their physical squad identities are confirmed. Archive the old manual
+  letter-suffixed squads with `rosterArchived`, retaining their reports, votes,
+  and internal IDs. Exclude archived squads from active rosters, assignment
+  controls, future coverage, and pick-list consensus. Never guess demo mappings
+  or transfer reports to an unidentified robot. Preserve regular teams and all
+  scouting/event settings; reimports must be idempotent.
 - STEM Gals (`2026txmck`) uses FIRST event TXMCK rather than TBA. Event setup
-  accepts FIRST event URLs and falls back to FIRST when TBA import data is
+  accepts FIRST event URLs (including qualifications/rankings/teams paths),
+  bare FIRST codes for the current year, and year-prefixed event keys. TXMCK1
+  and 2026txmck1 resolve to the existing NTX event. Fall back to FIRST when TBA import data is
   unavailable. Preserve the chosen provider on reimport; a statistics outage
   must not switch a successful TBA import to FIRST. Import the verified full
   paginated roster and qualification schedule, preserving reports, claims,
   video settings, completion snapshots, and scouting state. Convert venue-local
   schedule times using FIRST's event timezone. Keep FIRST match identifiers
-  distinct from TBA keys and NTX manual. Regular-team EPA/xP are current-year team stats; event RP,
+  distinct from TBA keys. Unconfigured manual rosters remain manual.
+  Regular-team EPA/xP are current-year team stats; event RP,
   ranks, and records come from FIRST rankings, refreshed every five minutes.
   Leave unposted rankings blank and preserve posted rankings during outages.
   Rankings refreshes must not overwrite EPA/xP or their independent scopes.
+  FIRST demo-team rankings are verified event-only data; clear unverified
+  cached demo stats before exposing RP while retaining verified event stats.
 - Poll configured FIRST events for posted qualification results every minute
   and refresh schedules at most every five minutes during automatic polling.
   Mark matches finished only with posted results, valid final scores, and exact

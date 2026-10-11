@@ -308,7 +308,7 @@ export const importEvent = action({
     const reference = importEventReference(args.eventKey)
     const eventKey = reference.eventKey
     const firstEventCode: string | null | undefined = reference.firstEventCode ?? await ctx.runQuery(internal.importData.firstEventCodeForKey, { eventKey })
-    if (/^\d{4}ntx$/.test(eventKey)) throw new Error("NTX uses its supplied roster; it is not a FIRST or TBA event")
+    if (/^\d{4}ntx$/.test(eventKey) && !firstEventCode) throw new Error("NTX uses its supplied roster until an official FIRST source is configured")
     const tbaKey = readEnv("TBA_API_KEY")
     const importFirst = async (code: string) => {
       // Fetch and validate the entire response before changing the saved event.

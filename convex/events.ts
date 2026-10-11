@@ -49,7 +49,7 @@ export const createOrSelect = mutation({
   args: { eventKey: v.string() },
   handler: async (ctx, args) => {
     const admin = await requireAdminFromDb(ctx)
-    const eventKey = args.eventKey.trim().startsWith("https://") ? importEventReference(args.eventKey).eventKey : args.eventKey.trim().toLowerCase()
+    const eventKey = importEventReference(args.eventKey).eventKey
     if (!/^\d{4}[a-z0-9]+$/.test(eventKey)) {
       throw new Error("Invalid event key")
     }

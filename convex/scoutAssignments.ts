@@ -24,7 +24,7 @@ export const completionReport = query({
     await requireAdminFromDb(ctx)
     const context = await assignmentContext(ctx, eventId)
     if (!context.event) throw new ConvexError("Event not found")
-    const teams = (await ctx.db.query("teams").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)).filter(team => !team.mergedIntoTeamNumber)
+    const teams = (await ctx.db.query("teams").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)).filter(team => !team.mergedIntoTeamNumber && !team.rosterArchived)
     const matches = await ctx.db.query("matches").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)
     const reviews = await Promise.all(matches.map(async match => {
       // Existing reports predate completionReviewAt; recognize them without a migration.
@@ -85,7 +85,7 @@ export const adminList = query({
     const event = await ctx.db.get(eventId)
     const context = await assignmentContext(ctx, eventId)
     const assignments = await ctx.db.query("scoutTeamAssignments").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", eventId)).take(500)
-    const teams = (await ctx.db.query("teams").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)).filter(team => !team.mergedIntoTeamNumber)
+    const teams = (await ctx.db.query("teams").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)).filter(team => !team.mergedIntoTeamNumber && !team.rosterArchived)
     const members = context.members
     const matches = await ctx.db.query("matches").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)
     const matchAssignments = matches.map(match => ({ matchNumber: match.matchNumber, slots: matchPlan(context, match), uncovered: [...match.redTeams, ...match.blueTeams].length - matchPlan(context, match).length }))
@@ -150,7 +150,7 @@ export const generate = mutation({
     if (!await ctx.db.get(eventId)) throw new ConvexError("Event not found")
     const { scouts } = await assignmentContext(ctx, eventId)
     if (!scouts.length) throw new ConvexError("Include at least one approved scout in the admin list first")
-    const teams = (await ctx.db.query("teams").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)).filter(team => !team.mergedIntoTeamNumber)
+    const teams = (await ctx.db.query("teams").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)).filter(team => !team.mergedIntoTeamNumber && !team.rosterArchived)
     if (!teams.length) throw new ConvexError("Import the event roster first")
     const matches = await ctx.db.query("matches").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)
     await preserveAssignmentHistory(ctx, eventId)
@@ -167,7 +167,7 @@ export const assignTeam = mutation({
   handler: async (ctx, args) => {
     await requireAdminFromDb(ctx)
     const team = await ctx.db.query("teams").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId).eq("teamNumber", args.teamNumber)).unique()
-    if (!team || team.mergedIntoTeamNumber) throw new ConvexError("Team not found in event")
+    if (!team || team.mergedIntoTeamNumber || team.rosterArchived) throw new ConvexError("Team not found in event")
     if (args.memberId) {
       const member = await ctx.db.get(args.memberId)
       const participant = await ctx.db.query("scoutAssignmentParticipants").withIndex("by_eventId_and_memberId", q => q.eq("eventId", args.eventId).eq("memberId", args.memberId!)).unique()
@@ -193,6 +193,6 @@ export const mine = query({
     const matches = await ctx.db.query("matches").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)
     const label = (teamNumber: number) => roster.find(team => team.teamNumber === teamNumber)?.eventTeamAlias || String(teamNumber)
     const matchAssignments = matches.flatMap(match => matchPlan(context, match).filter(slot => slot.scout === user.memberId).map(slot => ({ matchNumber: match.matchNumber, teamNumber: slot.teamNumber, label: label(slot.teamNumber) }))).sort((a, b) => a.matchNumber - b.matchNumber)
-    return { enabled: event?.scoutAssignmentsEnabled ?? false, mode: event?.scoutAssignmentMode ?? "automatic", driverStations: context.stations.filter(slot => slot.memberId === user.memberId).map(slot => slot.station), hasSchedule: matches.length > 0, matchAssignments, teams: assignments.map(row => ({ teamNumber: row.teamNumber, label: label(row.teamNumber) })) }
+    return { enabled: event?.scoutAssignmentsEnabled ?? false, mode: event?.scoutAssignmentMode ?? "automatic", driverStations: context.stations.filter(slot => slot.memberId === user.memberId).map(slot => slot.station), hasSchedule: matches.length > 0, matchAssignments, teams: assignments.filter(row => context.groups.some(group => group.teamNumber === row.teamNumber)).map(row => ({ teamNumber: row.teamNumber, label: label(row.teamNumber) })) }
   },
 })

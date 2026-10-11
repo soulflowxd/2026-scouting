@@ -15,12 +15,13 @@ async function context(ctx: import("./_generated/server").QueryCtx, args: { even
   const event = await ctx.db.get(args.eventId)
   const match = await ctx.db.query("matches").withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", args.eventId).eq("matchNumber", args.matchNumber)).unique()
   // Custom rosters have no official schedule. Never invent TBA match keys.
-  if (!event || /^\d{4}ntx$/i.test(event.eventKey) || !match) return null
+  if (!event || !match) return null
   const first = firstEventReference(event)
   if (first && match.tbaMatchKey === `first:${event.eventKey}:qm${args.matchNumber}`) return {
     ...match, firstYear: first.year, firstEventCode: first.code,
     resultUrl: `https://frc-events.firstinspires.org/${first.year}/${first.code}/qualifications/${args.matchNumber}`,
   }
+  if (/^\d{4}ntx$/i.test(event.eventKey)) return null
   if (match.tbaMatchKey !== `${event.eventKey}_qm${args.matchNumber}`) return null
   return { ...match, resultUrl: `https://www.thebluealliance.com/match/${match.tbaMatchKey}` }
 }

@@ -99,12 +99,12 @@ export function EventSetupRoute() {
       </div>
       <form onSubmit={onImport} className="grid gap-4 rounded-xl border bg-card p-4">
         <div className="grid gap-2">
-          <Label htmlFor="eventKey">Event key or FIRST event URL</Label>
+          <Label htmlFor="eventKey">Event key, FIRST code, or FIRST event URL</Label>
           <Input
             id="eventKey"
             value={eventKey}
             onChange={(event) => setEventKey(event.target.value)}
-            placeholder="2026txmck or https://frc-events.firstinspires.org/2026/TXMCK/"
+            placeholder="TXMCK1, 2026txmck1, or a FIRST event link"
           />
         </div>
         <div className="flex flex-wrap gap-2">

@@ -3,7 +3,6 @@ import { env } from "../_generated/server"
 type EventReference = { eventKey: string; firstEventCode?: string }
 
 export function firstEventReference(event: EventReference) {
-  if (/^\d{4}ntx$/i.test(event.eventKey)) return null
   const year = Number(event.eventKey.slice(0, 4))
   const code = event.firstEventCode ?? (/^\d{4}txmck$/i.test(event.eventKey) ? "TXMCK" : undefined)
   if (!Number.isInteger(year) || year < 2015 || year > 2099 || !code || !/^[a-z0-9]{3,30}$/i.test(code)) return null
@@ -12,15 +11,21 @@ export function firstEventReference(event: EventReference) {
 
 export function importEventReference(input: string) {
   const value = input.trim()
+  const canonical = (year: string, code: string, first: boolean) => {
+    const eventKey = `${year}${code.toLowerCase()}`
+    if (year === "2026" && /^(txmck1|ntx)$/i.test(code)) return { eventKey: "2026ntx", firstEventCode: "TXMCK1" }
+    return { eventKey, firstEventCode: first || /^txmck$/i.test(code) ? code.toUpperCase() : undefined }
+  }
   if (!value.startsWith("https://")) {
-    const eventKey = value.toLowerCase()
-    if (!/^20\d{2}[a-z0-9]{3,30}$/.test(eventKey)) throw new Error("Enter an event key or FIRST event URL")
-    return { eventKey, firstEventCode: /^\d{4}txmck$/.test(eventKey) ? "TXMCK" : undefined }
+    const key = value.match(/^(20\d{2})([a-z0-9]{3,30})$/i)
+    if (key) return canonical(key[1], key[2], false)
+    if (/^[a-z][a-z0-9]{2,29}$/i.test(value)) return canonical(String(new Date().getUTCFullYear()), value, true)
+    throw new Error("Enter an event key, FIRST event code, or FIRST event URL")
   }
   const url = new URL(value)
-  const match = url.pathname.match(/^\/(20\d{2})\/([a-z0-9]{3,30})\/?$/i)
+  const match = url.pathname.match(/^\/(20\d{2})\/([a-z0-9]{3,30})(?:\/(?:qualifications(?:\/\d+)?|rankings|teams))?\/?$/i)
   if (url.hostname !== "frc-events.firstinspires.org" || url.port || url.username || url.password || !match) throw new Error("Enter a FIRST event URL such as https://frc-events.firstinspires.org/2026/TXMCK/")
-  return { eventKey: `${match[1]}${match[2].toLowerCase()}`, firstEventCode: match[2].toUpperCase() }
+  return canonical(match[1], match[2], true)
 }
 
 export async function firstJson(path: string): Promise<unknown> {

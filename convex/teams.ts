@@ -60,7 +60,7 @@ export const list = query({
       .withIndex("by_eventId_and_teamNumber", (q) => q.eq("eventId", args.eventId))
       .take(500)
 
-    return teams.filter(team => team.mergedIntoTeamNumber === undefined)
+    return teams.filter(team => team.mergedIntoTeamNumber === undefined && !team.rosterArchived)
       .sort((a, b) => a.teamNumber - b.teamNumber)
       .map((team) => {
         const teamReports = reports.filter(

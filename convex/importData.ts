@@ -3,6 +3,7 @@ import { internalMutation, internalQuery } from "./_generated/server"
 import { match13RatingValidator } from "./lib/match13"
 import { requireApprovedUserFromDb } from "./lib/authz"
 import { firstEventReference } from "./lib/firstApi"
+import { needsEventStats } from "./lib/demoTeams"
 
 export const photoContext = internalQuery({
   args: { eventId: v.id("events"), teamNumber: v.number() },
@@ -135,6 +136,17 @@ export const applyEventImport = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
+    const event = await ctx.db.get(args.eventId)
+    if (!event) throw new Error("Event not found")
+    const officialNtx = event.eventKey === "2026ntx" && args.firstEventCode === "TXMCK1"
+    if (officialNtx) {
+      const existingTeams = await ctx.db.query("teams").withIndex("by_eventId", q => q.eq("eventId", args.eventId)).take(500)
+      for (const team of existingTeams) {
+        if (team.eventTeamAlias && !args.teams.some(row => row.teamNumber === team.teamNumber)) {
+          await ctx.db.patch(team._id, { rosterArchived: true })
+        }
+      }
+    }
     for (const team of args.teams) {
       const existing = await ctx.db
         .query("teams")
@@ -142,7 +154,7 @@ export const applyEventImport = internalMutation({
           q.eq("eventId", args.eventId).eq("teamNumber", team.teamNumber),
         )
         .unique()
-      const doc = { eventId: args.eventId, ...team }
+      const doc = { eventId: args.eventId, ...team, ...(officialNtx ? { rosterArchived: false } : {}) }
       if (existing) {
         await ctx.db.patch(existing._id, doc)
       } else {
@@ -208,8 +220,11 @@ export const applyFirstRankings = internalMutation({
       if (!team) continue
       const stat = await ctx.db.query("externalStats").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId).eq("teamNumber", ranking.teamNumber)).unique()
       // Rankings refresh independently of EPA/xP; never replace their snapshot.
-      if (stat) await ctx.db.patch(stat._id, ranking)
-      else await ctx.db.insert("externalStats", { eventId: args.eventId, refreshedAt: Date.now(), ...ranking })
+      const eventOnly = needsEventStats(team)
+      const verified = { eventId: args.eventId, refreshedAt: Date.now(), ...ranking, ...(eventOnly ? { eventOnly: true } : {}) }
+      if (stat && eventOnly && !stat.eventOnly) await ctx.db.replace(stat._id, verified)
+      else if (stat) await ctx.db.patch(stat._id, { ...ranking, ...(eventOnly ? { eventOnly: true } : {}) })
+      else await ctx.db.insert("externalStats", verified)
     }
     return null
   },

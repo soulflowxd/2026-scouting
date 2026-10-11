@@ -89,6 +89,7 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_eventId_and_teamNumber", ["eventId", "teamNumber"]),
   teams: defineTable({
+    rosterArchived: v.optional(v.boolean()),
     avatar: v.optional(v.string()),
     mergedIntoTeamNumber: v.optional(v.number()),
     eventTeamAlias: v.optional(v.string()),

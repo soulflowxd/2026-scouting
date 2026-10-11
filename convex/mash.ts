@@ -19,7 +19,7 @@ export const vote = mutation({
     if (!await ctx.db.get(args.eventId)) throw new Error("Event not found")
     for (const teamNumber of [args.left, args.right]) {
       const team = await ctx.db.query("teams").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId).eq("teamNumber", teamNumber)).unique()
-      if (!team) throw new Error("Team not in this event")
+      if (!team || team.rosterArchived || team.mergedIntoTeamNumber) throw new Error("Team not in this event")
     }
     const votes = await ctx.db.query("mashVotes").withIndex("by_eventId", q => q.eq("eventId", args.eventId)).take(5000)
     if (votes.length >= 5000) throw new Error("This event has reached its 5,000-comparison limit")

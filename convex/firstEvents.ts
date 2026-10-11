@@ -1,7 +1,7 @@
 "use node"
 
 import { v } from "convex/values"
-import { internal } from "./_generated/api"
+import { api, internal } from "./_generated/api"
 import { internalAction, type ActionCtx } from "./_generated/server"
 import type { Doc, Id } from "./_generated/dataModel"
 import { firstEventReference, firstJson, firstRecord, firstTimestamp } from "./lib/firstApi"
@@ -96,6 +96,21 @@ export async function syncFirstEvent(ctx: ActionCtx, eventId: Id<"events">, refr
 export const refreshEvent = internalAction({
   args: { eventId: v.id("events") },
   handler: async (ctx, { eventId }): Promise<number> => syncFirstEvent(ctx, eventId, true),
+})
+
+// Operator-only linking updates the existing NTX event; never creates a duplicate.
+export const linkNtx = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ teams: number; matches: number; results: number; rankings: number }> => {
+    const events: Doc<"events">[] = await ctx.runQuery(api.events.list, {})
+    const event = events.find(row => row.eventKey === "2026ntx")
+    if (!event) throw new Error("Existing NTX event not found")
+    const data = await fetchFirstImport(event.eventKey, "TXMCK1")
+    await ctx.runMutation(internal.importData.applyEventImport, { eventId: event._id, ...data, eventName: "NTX" })
+    const results = await syncFirstEvent(ctx, event._id)
+    const rankings: number = await ctx.runAction(internal.firstRankings.refreshEvent, { eventId: event._id })
+    return { teams: data.teams.length, matches: data.matches.length, results, rankings }
+  },
 })
 
 export const refreshAll = internalAction({

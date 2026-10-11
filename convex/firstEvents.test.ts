@@ -53,6 +53,12 @@ test("FIRST requires a posted qualification result with the correct robot statio
 
 test("FIRST URLs and venue-local timestamps use validated sources and daylight-saving offsets", () => {
   expect(importEventReference("https://frc-events.firstinspires.org/2026/TXMCK/")).toEqual({ eventKey: "2026txmck", firstEventCode: "TXMCK" })
+  for (const input of ["2026txmck1", "2026ntx", "https://frc-events.firstinspires.org/2026/TXMCK1/qualifications", "https://frc-events.firstinspires.org/2026/TXMCK1/rankings"]) {
+    expect(importEventReference(input)).toEqual({ eventKey: "2026ntx", firstEventCode: "TXMCK1" })
+  }
+  vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-11T12:00:00Z"))
+  expect(importEventReference("TXMCK1")).toEqual({ eventKey: "2026ntx", firstEventCode: "TXMCK1" })
+  vi.useRealTimers()
   expect(() => importEventReference("https://example.com/2026/TXMCK/")).toThrow()
   expect(firstTimestamp("2026-10-10T10:30:00", "Central Standard Time")).toBe(Date.parse("2026-10-10T15:30:00Z") / 1000)
   expect(firstTimestamp("2026-01-10T10:30:00", "Central Standard Time")).toBe(Date.parse("2026-01-10T16:30:00Z") / 1000)
@@ -167,5 +173,33 @@ test("admin imports fall back from TBA to verified FIRST data and reimports reta
   expect((await admin.action(api.imports.importEvent, { eventKey: "2026firstonly" })).eventId).toBe(imported.eventId)
   expect(fetchMock.mock.calls.filter(([url]) => url.includes("thebluealliance"))).toHaveLength(tbaCalls)
   expect(await admin.query(api.tbaMatches.forMatch, { eventId: imported.eventId, matchNumber: 1 })).toMatchObject({ firstEventCode: "FIRSTONLY", resultUrl: "https://frc-events.firstinspires.org/2026/FIRSTONLY/qualifications/1" })
-  await expect(admin.action(api.imports.importEvent, { eventKey: "2026ntx" })).rejects.toThrow("supplied roster")
+  await expect(admin.action(api.imports.importEvent, { eventKey: "2026ntx" })).rejects.toThrow("FIRST event not found")
+})
+
+test("NTX FIRST linking keeps demo numbers separate, archives old aliases, and preserves reports and settings", async () => {
+  configure()
+  const t = convexTest(schema, modules)
+  const eventId = await t.run(async ctx => {
+    const eventId = await ctx.db.insert("events", { eventKey: "2026ntx", name: "NTX", scoutingEnabled: false, importStatus: "ready", createdByToken: "admin" })
+    await ctx.db.insert("teams", { eventId, teamNumber: 99003, tbaTeamKey: "frc5829B", nickname: "Awtysparks", eventTeamAlias: "5829B" })
+    await ctx.db.insert("matchReports", { eventId, matchNumber: 3, teamNumber: 99003, scoutToken: "scout", driverRating: 5, defenseRating: 5, autoClimb: "none", endgameClimb: "none", autoNotes: "Keep", teleopNotes: "", endgameNotes: "", tags: [], updatedAt: 1 })
+    return eventId
+  })
+  const demoTeams = teams.map((team, index) => index === 0 ? { ...team, teamNumber: 9995 } : team)
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.includes("/events?")) return new Response(JSON.stringify({ Events: [{ code: "TXMCK1", name: "NTX", timezone: "Central Standard Time" }] }))
+    if (url.includes("/teams?")) return new Response(JSON.stringify({ pageCurrent: 1, pageTotal: 1, teamCountTotal: 6, teams: demoTeams.map(team => ({ teamNumber: team.teamNumber, nameShort: "Demo" })) }))
+    if (url.includes("/schedule/")) return new Response(JSON.stringify({ Schedule: [{ matchNumber: 1, tournamentLevel: "Qualification", teams: demoTeams }] }))
+    if (url.includes("/rankings/")) return new Response(JSON.stringify({ Rankings: [{ teamNumber: 9995, rank: 1, sortOrder1: 4, matchesPlayed: 1, wins: 1, losses: 0, ties: 0 }] }))
+    if (url.includes("/scores/")) return new Response(JSON.stringify({ MatchScores: [] }))
+    return new Response(JSON.stringify({ Matches: [{ ...result, teams: demoTeams }] }))
+  }))
+  expect(await t.action(internal.firstEvents.linkNtx, {})).toEqual({ teams: 6, matches: 1, results: 1, rankings: 1 })
+  expect(await t.action(internal.firstEvents.linkNtx, {})).toMatchObject({ results: 0 })
+  expect(await t.run(ctx => ctx.db.get(eventId))).toMatchObject({ firstEventCode: "TXMCK1", scoutingEnabled: false })
+  const roster = await t.query(api.teams.list, { eventId })
+  expect(roster.map(team => team.teamNumber)).not.toContain(99003)
+  expect(roster.find(team => team.teamNumber === 9995)).toMatchObject({ averageRp: 4, eventRank: 1 })
+  expect(await t.run(ctx => ctx.db.query("matchReports").take(10))).toHaveLength(1)
+  expect(await t.query(internal.tbaMatches.getContext, { eventId, matchNumber: 1 })).toMatchObject({ firstEventCode: "TXMCK1", resultUrl: "https://frc-events.firstinspires.org/2026/TXMCK1/qualifications/1", redTeams: [9995, 10340, 6369] })
 })
