@@ -51,6 +51,10 @@ redirects here; keep project guidance here rather than duplicating it.
 
 ## Scouting Behavior
 
+- Match cycle counts allow increments of 0.5, including auto, teleop shifts,
+  and endgame. Preserve half cycles in submissions and report statistics;
+  other integer counters and ratings retain their existing increments.
+
 - Admin missing-report lists support all, match-only, and pit-only filters,
   all finished matches or one match, and copying the complete filtered list.
   Include event, scout, team alias, and match number in exports. Keep unassigned

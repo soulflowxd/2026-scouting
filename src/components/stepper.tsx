@@ -9,6 +9,7 @@ type StepperProps = {
   value: number
   min?: number
   max?: number
+  step?: number
   onChange: (value: number) => void
 }
 
@@ -18,6 +19,7 @@ export function Stepper({
   value,
   min = 0,
   max = 999,
+  step = 1,
   onChange,
 }: StepperProps) {
   const setValue = (next: number) => onChange(Math.max(min, Math.min(max, next)))
@@ -31,7 +33,7 @@ export function Stepper({
           variant="outline"
           size="icon-lg"
           disabled={value <= min}
-          onClick={() => setValue(value - 1)}
+          onClick={() => setValue(value - step)}
         >
           <Minus aria-hidden="true" />
           <span className="sr-only">Decrease {label}</span>
@@ -41,8 +43,8 @@ export function Stepper({
           type="number"
           min={min}
           max={max}
-          step={1}
-          inputMode="numeric"
+          step={step}
+          inputMode={step < 1 ? "decimal" : "numeric"}
           value={value}
           onChange={(event) => setValue(Number(event.target.value) || 0)}
           className="h-11 text-center text-lg font-semibold"
@@ -52,7 +54,7 @@ export function Stepper({
           variant="outline"
           size="icon-lg"
           disabled={value >= max}
-          onClick={() => setValue(value + 1)}
+          onClick={() => setValue(value + step)}
         >
           <Plus aria-hidden="true" />
           <span className="sr-only">Increase {label}</span>

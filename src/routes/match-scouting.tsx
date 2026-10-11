@@ -518,6 +518,7 @@ function MatchForm({
         <Stepper
           id="autoCycles"
           label="Auto cycles"
+          step={0.5}
           value={form.autoCycles}
           onChange={(autoCycles) => setForm((current) => ({ ...current, autoCycles }))}
         />
@@ -558,7 +559,7 @@ function MatchForm({
         <div className="grid gap-4 lg:grid-cols-3">
           {(["shift1Cycles", "shift2Cycles", "shift3Cycles"] as const).map((field, index) => (
             <div key={field} className="rounded-lg border bg-muted/20 p-3">
-              <Stepper id={field} label={`Shift ${index + 1} cycles`} value={form[field]}
+              <Stepper id={field} label={`Shift ${index + 1} cycles`} value={form[field]} step={0.5}
                 onChange={value => setForm(current => ({ ...current, [field]: value }))} />
             </div>
           ))}
@@ -583,7 +584,7 @@ function MatchForm({
         </div>
       </FormSection>
       <FormSection title="Endgame">
-        <Stepper id="endgameCycles" label="Endgame cycles" value={form.endgameCycles}
+        <Stepper id="endgameCycles" label="Endgame cycles" value={form.endgameCycles} step={0.5}
           onChange={(endgameCycles) => setForm(current => ({ ...current, endgameCycles }))} />
         <OptionGroup
           label="Tower climb"

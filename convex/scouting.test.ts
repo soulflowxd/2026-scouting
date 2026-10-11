@@ -313,25 +313,25 @@ describe("scouting backend", () => {
     }
 
     const cycleReport = { ...report, autoFuel: undefined, teleopFuel: undefined,
-      autoCycles: 2, teleopCyclesPerShift: 3, endgameCycles: 1, offShiftActivity: "  Collect fuel and defend  " }
-    await expect(scoutA.mutation(api.matchScouting.saveReport, { ...cycleReport, autoCycles: 1.5 })).rejects.toThrow("whole-number cycle counts")
+      autoCycles: 2.5, teleopCyclesPerShift: 3.5, endgameCycles: 0.5, offShiftActivity: "  Collect fuel and defend  " }
+    await expect(scoutA.mutation(api.matchScouting.saveReport, { ...cycleReport, autoCycles: 1.25 })).rejects.toThrow("increments of 0.5")
     await expect(scoutA.mutation(api.matchScouting.saveReport, { ...cycleReport, offShiftActivity: " " })).rejects.toThrow("off-shift")
     const cycleReportId = await scoutA.mutation(api.matchScouting.saveReport, cycleReport)
     const cycleDetail = await scoutA.query(api.teams.detail, { eventId, teamNumber: 1 })
-    expect(cycleDetail?.averages).toMatchObject({ autoCycles: 2, teleopCyclesPerShift: 3, endgameCycles: 1 })
+    expect(cycleDetail?.averages).toMatchObject({ autoCycles: 2.5, teleopCyclesPerShift: 3.5, endgameCycles: 0.5 })
     expect(cycleDetail?.matchReports[0].offShiftActivity).toBe("Collect fuel and defend")
     const shiftedReport = { ...cycleReport, teleopCyclesPerShift: undefined,
-      shift1Cycles: 1, shift2Cycles: 2, shift3Cycles: 3, transitionActivity: "  Collect and reposition  ",
+      shift1Cycles: 1.5, shift2Cycles: 2.5, shift3Cycles: 3.5, transitionActivity: "  Collect and reposition  ",
       autoAllianceFuel: undefined, opponentAutoFuel: undefined, wonAuto: true, wonMatch: true, totalMatchPoints: 250 }
     await expect(scoutA.mutation(api.matchScouting.saveReport, { ...shiftedReport, totalMatchPoints: -1 })).rejects.toThrow("Total match points")
-    await expect(scoutA.mutation(api.matchScouting.saveReport, { ...shiftedReport, shift2Cycles: -1 })).rejects.toThrow("whole-number cycle counts")
-    await expect(scoutA.mutation(api.matchScouting.saveReport, { ...shiftedReport, shift3Cycles: undefined })).rejects.toThrow("whole-number cycle counts")
+    await expect(scoutA.mutation(api.matchScouting.saveReport, { ...shiftedReport, shift2Cycles: -1 })).rejects.toThrow("increments of 0.5")
+    await expect(scoutA.mutation(api.matchScouting.saveReport, { ...shiftedReport, shift3Cycles: undefined })).rejects.toThrow("increments of 0.5")
     await expect(scoutA.mutation(api.matchScouting.saveReport, { ...shiftedReport, transitionActivity: " " })).rejects.toThrow("transition")
     await expect(scoutA.mutation(api.matchScouting.saveReport, shiftedReport)).rejects.toThrow("already submitted")
     await admin.mutation(api.matchScouting.removeReport, { reportId: cycleReportId })
     await scoutA.mutation(api.matchScouting.saveReport, shiftedReport)
     const shiftedDetail = await scoutA.query(api.teams.detail, { eventId, teamNumber: 1 })
-    expect(shiftedDetail?.averages).toMatchObject({ shift1Cycles: 1, shift2Cycles: 2, shift3Cycles: 3 })
+    expect(shiftedDetail?.averages).toMatchObject({ shift1Cycles: 1.5, shift2Cycles: 2.5, shift3Cycles: 3.5 })
     expect(shiftedDetail?.matchReports[0].transitionActivity).toBe("Collect and reposition")
     expect(shiftedDetail?.matchReports[0]).toMatchObject({ wonAuto: true, wonMatch: true, totalMatchPoints: 250 })
     expect(shiftedDetail?.averages.autoHubWinRate).toBe(1)

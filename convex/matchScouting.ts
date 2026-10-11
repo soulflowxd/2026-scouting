@@ -168,8 +168,8 @@ export const saveReport = mutation({
     const separateShifts = shifts.some(value => value !== undefined) || args.transitionActivity !== undefined
     const cycleValues = [args.autoCycles, ...(separateShifts ? shifts : [args.teleopCyclesPerShift]), args.endgameCycles]
     if (cycleValues.some(value => value !== undefined) || args.autoFuel === undefined || args.teleopFuel === undefined) {
-      if (cycleValues.some(value => value === undefined || !Number.isFinite(value) || !Number.isInteger(value) || value < 0 || value > 999)) {
-        throw new ConvexError("Enter whole-number cycle counts between 0 and 999 for auto, shift, and endgame")
+      if (cycleValues.some(value => value === undefined || !Number.isFinite(value) || !Number.isInteger(value * 2) || value < 0 || value > 999)) {
+        throw new ConvexError("Enter cycle counts in increments of 0.5 between 0 and 999 for auto, shift, and endgame")
       }
       if (!args.offShiftActivity?.trim()) throw new ConvexError("Describe what the robot does off-shift")
       if (separateShifts && !args.transitionActivity?.trim()) throw new ConvexError("Describe what the robot does in transition")
