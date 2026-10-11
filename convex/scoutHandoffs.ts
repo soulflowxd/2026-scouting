@@ -22,7 +22,7 @@ async function scope(ctx: QueryCtx | MutationCtx, eventId: Id<"events">, memberI
 }
 
 function sameScope(a: Pick<Doc<"scoutAssignmentHandoffs">, "teamNumbers" | "matchSlots" | "driverStations">, b: Awaited<ReturnType<typeof scope>>) {
-  return JSON.stringify(a.teamNumbers) === JSON.stringify(b.teamNumbers) && JSON.stringify(a.matchSlots) === JSON.stringify(b.matchSlots) && JSON.stringify(a.driverStations) === JSON.stringify(b.driverStations)
+  return JSON.stringify(a.teamNumbers) === JSON.stringify(b.teamNumbers) && JSON.stringify(a.matchSlots.filter(slot => slot.matchNumber >= b.fromMatchNumber)) === JSON.stringify(b.matchSlots) && JSON.stringify(a.driverStations) === JSON.stringify(b.driverStations)
 }
 
 function checkRecipient(data: Awaited<ReturnType<typeof scope>>, toMemberId: Id<"members">) {
@@ -49,6 +49,12 @@ export const options = query({
       teamLabels: data.teamNumbers.map(number => roster.find(team => team.teamNumber === number)?.eventTeamAlias || String(number)),
       matchCount: data.matchSlots.length,
       driverStations: data.driverStations,
+      selfId: user.memberId,
+      owners: data.context.members.filter(member => member._id !== user.memberId && (
+        data.context.event?.scoutAssignmentMode === "manual"
+          ? data.context.stations.some(slot => slot.memberId === member._id)
+          : data.context.groups.some(group => group.scout === member._id) || data.matches.some(match => match.matchNumber >= data.boundary && matchPlan(data.context, match).some(slot => slot.scout === member._id))
+      )).map(member => ({ _id: member._id, name: member.name || member.email || "Scout" })),
       // Participant inclusion is deliberately not an eligibility requirement.
       scouts: data.context.members.filter(member => member._id !== user.memberId).map(member => ({ _id: member._id, name: member.name || member.email || "Scout" })),
     }
@@ -56,23 +62,28 @@ export const options = query({
 })
 
 export const request = mutation({
-  args: { eventId: v.id("events"), substituteId: v.id("members"), fromMatchNumber: v.number() },
+  args: { eventId: v.id("events"), substituteId: v.id("members"), fromMatchNumber: v.number(), sourceId: v.optional(v.id("members")) },
   handler: async (ctx, args) => {
     const user = await requireApprovedUserFromDb(ctx)
     await requireScoutingOpen(ctx, args.eventId)
-    if (!user.memberId || user.memberId === args.substituteId) throw new ConvexError("Choose another approved scout")
-    const data = await scope(ctx, args.eventId, user.memberId, args.fromMatchNumber)
+    if (!user.memberId) throw new ConvexError("Scout account not found")
+    const sourceId = args.sourceId ?? user.memberId
+    const incomingRequest = sourceId !== user.memberId
+    if (sourceId === args.substituteId || (incomingRequest && args.substituteId !== user.memberId)) throw new ConvexError("Choose another approved scout; request a handoff only for yourself")
+    const data = await scope(ctx, args.eventId, sourceId, args.fromMatchNumber)
+    const source = data.context.members.find(member => member._id === sourceId)
+    if (!source) throw new ConvexError("Choose an approved scout with assignments")
     if (!data.context.event?.scoutAssignmentsEnabled) throw new ConvexError("Ask an admin to enable scouting assignments first")
     if (!data.teamNumbers.length && !data.matchSlots.length && !data.driverStations.length) throw new ConvexError("You have no assignments to hand off")
     const pending = (await Promise.all((["requested", "accepted"] as const).map(status => ctx.db.query("scoutAssignmentHandoffs").withIndex("by_eventId_and_status", q => q.eq("eventId", args.eventId).eq("status", status)).take(500)))).flat()
-    if (pending.some(row => (row.status === "requested" || row.status === "accepted") && [row.fromMemberId, row.toMemberId].some(id => id === user.memberId || id === args.substituteId))) throw new ConvexError("Finish or cancel the existing handoff for these scouts first")
+    if (pending.some(row => [row.fromMemberId, row.toMemberId].some(id => id === sourceId || id === args.substituteId))) throw new ConvexError("Finish or cancel the existing handoff for these scouts first")
     const recipient = checkRecipient(data, args.substituteId)
     return await ctx.db.insert("scoutAssignmentHandoffs", {
-      eventId: args.eventId, fromMemberId: user.memberId, toMemberId: recipient._id,
-      fromToken: user.tokenIdentifier, toToken: recipient.tokenIdentifier, fromName: user.name || user.email || "Scout", toName: recipient.name || recipient.email || "Scout",
+      eventId: args.eventId, fromMemberId: sourceId, toMemberId: recipient._id,
+      fromToken: source.tokenIdentifier, toToken: recipient.tokenIdentifier, fromName: source.name || source.email || "Scout", toName: recipient.name || recipient.email || "Scout",
       fromMatchNumber: data.fromMatchNumber, teamNumbers: data.teamNumbers, matchSlots: data.matchSlots,
       driverStations: data.driverStations,
-      status: "requested", requestedAt: Date.now(),
+      status: incomingRequest ? "accepted" : "requested", requestedAt: Date.now(), ...(incomingRequest ? { acceptedAt: Date.now() } : {}),
     })
   },
 })
@@ -105,15 +116,16 @@ export const respond = mutation({
     await requireScoutingOpen(ctx, handoff.eventId)
     if (action === "accept" && !incoming) throw new ConvexError("The substitute must accept on their own account")
     if (action === "confirm" && (!owner || handoff.status !== "accepted")) throw new ConvexError("The substitute must accept before the original scout confirms")
-    const data = await scope(ctx, handoff.eventId, handoff.fromMemberId, handoff.fromMatchNumber)
+    const current = await scope(ctx, handoff.eventId, handoff.fromMemberId)
+    const data = await scope(ctx, handoff.eventId, handoff.fromMemberId, Math.max(current.boundary, handoff.fromMatchNumber))
     if (!data.context.event?.scoutAssignmentsEnabled || !sameScope(handoff, data)) throw new ConvexError("Assignments changed. Cancel this request and arrange a new handoff.")
     const recipient = checkRecipient(data, handoff.toMemberId)
     if (action === "accept") { await ctx.db.patch(handoffId, { status: "accepted", acceptedAt: Date.now() }); return }
     // Snapshot every scheduled match before groups change. Earlier matches never transfer.
     for (const match of data.matches) {
       const slots = match.assignmentSlots ?? assignmentSlots(data.context, match)
-      const next = match.matchNumber >= handoff.fromMatchNumber ? slots.map(slot => slot.memberId === handoff.fromMemberId ? { ...slot, memberId: recipient._id, scoutToken: recipient.tokenIdentifier, scoutName: recipient.name || recipient.email || "Scout" } : slot) : slots
-      await ctx.db.patch(match._id, { assignmentSlots: next, ...(match.matchNumber < handoff.fromMatchNumber ? { assignmentFrozenAt: match.assignmentFrozenAt ?? Date.now() } : {}) })
+      const next = match.matchNumber >= data.fromMatchNumber ? slots.map(slot => slot.memberId === handoff.fromMemberId ? { ...slot, memberId: recipient._id, scoutToken: recipient.tokenIdentifier, scoutName: recipient.name || recipient.email || "Scout" } : slot) : slots
+      await ctx.db.patch(match._id, { assignmentSlots: next, ...(match.matchNumber < data.fromMatchNumber ? { assignmentFrozenAt: match.assignmentFrozenAt ?? Date.now() } : {}) })
     }
     const groups = await ctx.db.query("scoutTeamAssignments").withIndex("by_eventId_and_memberId", q => q.eq("eventId", handoff.eventId).eq("memberId", handoff.fromMemberId)).take(500)
     for (const group of groups) await ctx.db.patch(group._id, { memberId: recipient._id })
@@ -123,7 +135,7 @@ export const respond = mutation({
       if (participant) await ctx.db.patch(participant._id, { included })
       else await ctx.db.insert("scoutAssignmentParticipants", { eventId: handoff.eventId, memberId, included })
     }
-    await ctx.db.patch(handoffId, { status: "confirmed", confirmedAt: Date.now() })
+    await ctx.db.patch(handoffId, { status: "confirmed", confirmedAt: Date.now(), fromMatchNumber: data.fromMatchNumber, matchSlots: data.matchSlots })
   },
 })
 

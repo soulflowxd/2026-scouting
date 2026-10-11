@@ -1,4 +1,5 @@
-import { useAction, useQuery } from "convex/react"
+import { useAction, useConvex, useQuery } from "convex/react"
+import { uploadScoutingReport } from "@/lib/upload-scouting-report"
 import { deleteDraft, queueReport, readDraft, writeDraft } from "@/lib/scouting-outbox"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Camera, Upload, MapPinned, RefreshCw, X } from "lucide-react"
@@ -212,12 +213,15 @@ function PitForm({
   onBack: () => void
 }) {
   const reports = useQuery(api.pit.getForTeam, { eventId, teamNumber })
+  const convex = useConvex()
   const me = useQuery(api.members.me)
   const canSkipPhoto = me?.role === "admin"
   const scoutingClosed = useQuery(api.events.list)?.find(event => event._id === eventId)?.scoutingEnabled === false
   const [photos, setPhotos] = useState<File[]>([])
   const [photoIds, setPhotoIds] = useState<Id<"_storage">[]>([])
   const [saving, setSaving] = useState(false)
+  const [submissionError, setSubmissionError] = useState<string | null>(null)
+  const [queuedId, setQueuedId] = useState<string | null>(null)
   const cameraInput = useRef<HTMLInputElement>(null)
   const uploadInput = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState<PitFormState>(emptyPitForm)
@@ -285,9 +289,9 @@ function PitForm({
   }, [draftOwner, draftKey, reports])
 
   useEffect(() => {
-    if (!draftReady || !draftOwner || saving) return
+    if (!draftReady || !draftOwner || saving || queuedId) return
     void writeDraft(draftOwner, draftKey, { form, photos }).catch(() => setDraftError(true))
-  }, [draftReady, draftOwner, draftKey, saving, form, photos])
+  }, [draftReady, draftOwner, draftKey, saving, queuedId, form, photos])
 
   const setBool = (key: keyof PitFormState, value: boolean) =>
     setForm((current) => ({ ...current, [key]: value }))
@@ -304,7 +308,14 @@ function PitForm({
     if (!me) { toast.error("Sign in before saving scouting data"); return }
     if (!photoIds.length && !photos.length && !canSkipPhoto) { toast.error("Upload at least one robot photo before submitting"); return }
     setSaving(true)
+    setSubmissionError(null)
     try {
+      if (queuedId) {
+        await uploadScoutingReport(convex, me.tokenIdentifier, queuedId)
+        toast.success(`Pit report for ${teamNumber} submitted`)
+        onBack()
+        return
+      }
       const bps = form.bps.trim() === "" ? undefined : Number(form.bps)
       if (bps !== undefined && (!Number.isFinite(bps) || bps < 0)) {
         toast.error("BPS must be a non-negative number")
@@ -335,12 +346,16 @@ function PitForm({
         return
       }
       if (!form.programmingLanguage.trim()) { toast.error("Ask which programming language they use, or enter Unknown"); return }
-      await queueReport(me.tokenIdentifier, { kind: "pit", args: { eventId, teamNumber, ...form, ...scoring, ...measurements, electricalQuality, buildQuality, programmingLanguage: form.programmingLanguage.trim(), bps, photoIds }, photos })
-      toast.success(`Pit report for ${teamNumber} saved on device. Upload pending.`)
+      const id = await queueReport(me.tokenIdentifier, { kind: "pit", args: { eventId, teamNumber, ...form, ...scoring, ...measurements, electricalQuality, buildQuality, programmingLanguage: form.programmingLanguage.trim(), bps, photoIds }, photos })
+      setQueuedId(id)
       await deleteDraft(me.tokenIdentifier, draftKey).catch(() => toast.warning("Submitted report is safe, but the old draft could not be cleared."))
+      await uploadScoutingReport(convex, me.tokenIdentifier, id)
+      toast.success(`Pit report for ${teamNumber} submitted`)
       onBack()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Save failed")
+      const message = error instanceof Error ? error.message : "Submission failed. Your queued report is retained."
+      setSubmissionError(message)
+      toast.error(message)
     } finally { setSaving(false) }
   }
 
@@ -357,6 +372,7 @@ function PitForm({
   return (
     <div className="grid gap-4">
       {draftError && <p role="alert" className="text-sm text-destructive">Draft could not be saved on this device. Keep this form open until submission succeeds.</p>}
+      {submissionError && <p role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm text-destructive">{submissionError}{queuedId ? " Your report is saved on this device. Retry submission below, or use Retry upload above." : ""}</p>}
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">Team {teamNumber}</h2>
@@ -366,6 +382,7 @@ function PitForm({
           Back
         </Button>
       </div>
+      <fieldset disabled={saving || !!queuedId} className="grid gap-4">
       <FormSection title="Fuel">
         <CheckRow label="Scores Fuel in Hub" checked={form.canScoreFuelHub} onChange={(value) => setBool("canScoreFuelHub", value)} />
         <CheckRow label="Intakes from Depot" checked={form.canIntakeDepot} onChange={(value) => setBool("canIntakeDepot", value)} />
@@ -516,8 +533,9 @@ function PitForm({
         <PitPhotos photoIds={photoIds} onRemove={saving ? undefined : id => setPhotoIds(current => current.filter(photo => photo !== id))} />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{photos.map((photo, index) => <LocalPhoto key={index} photo={photo} disabled={saving} onRemove={() => setPhotos(current => current.filter((_, i) => i !== index))} />)}</div>
       </FormSection>
+      </fieldset>
       <Button type="button" size="lg" disabled={scoutingClosed || saving || (!photoIds.length && !photos.length && !canSkipPhoto) || photoIds.length + photos.length > 4 || reports === undefined} onClick={() => void onSubmit()}>
-        {saving ? "Saving..." : "Submit pit report"}
+        {saving ? "Submitting…" : queuedId ? "Retry submission" : "Submit pit report"}
       </Button>
     </div>
   )

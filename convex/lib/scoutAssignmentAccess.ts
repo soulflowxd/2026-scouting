@@ -1,8 +1,8 @@
 import { ConvexError } from "convex/values"
-import type { MutationCtx } from "../_generated/server"
+import type { MutationCtx, QueryCtx } from "../_generated/server"
 import type { Id } from "../_generated/dataModel"
 import { assignmentContext, matchPlan } from "./scoutMatchAssignments"
-export async function requireAssignedTeam(ctx: MutationCtx, args: { eventId: Id<"events">; teamNumber: number; matchNumber: number }, user: { tokenIdentifier: string; role: string }) {
+export async function requireAssignedTeam(ctx: MutationCtx | QueryCtx, args: { eventId: Id<"events">; teamNumber: number; matchNumber: number }, user: { tokenIdentifier: string; role: string }) {
   const event = await ctx.db.get(args.eventId)
   if (user.role === "admin" || user.role === "superAdmin") return
   if (!event?.scoutAssignmentsEnabled) throw new ConvexError("Ask an admin to enable and generate scouting assignments for this event")

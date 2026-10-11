@@ -90,7 +90,9 @@ export function MatchScoutingRoute() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
   const reportRef = useRef<HTMLElement>(null)
   const [scrollRequest, setScrollRequest] = useState(0)
+  const canOpenReport = (match: number, team: number) => me?.role === "admin" || !!(myAssignments?.enabled && myAssignments.matchAssignments.some(slot => slot.matchNumber === match && slot.teamNumber === team))
   function selectTeam(match: number, team: number) {
+    if (!canOpenReport(match, team)) return
     setMatchNumber(match)
     setTeamNumber(team)
     setScrollRequest(current => current + 1)
@@ -135,7 +137,7 @@ export function MatchScoutingRoute() {
       <MatchVideoFolder key={activeEvent._id} eventId={activeEvent._id} settings={driveVideos.settings} canEdit={me?.role === "admin"} loading={driveVideos.loading} count={driveVideos.videos.length} error={driveVideos.error} onRefresh={driveVideos.refresh} />
       {myAssignments && <section className="grid gap-3 rounded-xl border border-primary/30 bg-card p-4" aria-label="My scouting assignments">
         <div><h2 className="text-sm font-semibold">{myAssignments.mode === "manual" ? `Your driver station: ${myAssignments.driverStations.join(", ") || "Not assigned yet"}` : `Your regular teams: ${myAssignments.teams.map(team => team.label).join(", ") || "None assigned yet"}`}</h2>
-          <p className="mt-1 text-xs text-muted-foreground">{myAssignments.mode === "manual" ? "Scout the team in your assigned driver station for each match. Open a match shortcut below to start scouting." : myAssignments.teams.length || myAssignments.matchAssignments.length ? "Follow your match assignment below—you may cover a different team when your regular teams play together." : "Ask an admin to include you and assign your teams. Approved scouts can accept a handoff even when not included."}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{myAssignments.mode === "manual" ? myAssignments.driverStations.length ? "Scout the team in your assigned driver station for each match. Open a match shortcut below to start scouting." : "You can request to take over for an assigned scout below, even if you are not included in assignments." : myAssignments.teams.length || myAssignments.matchAssignments.length ? "Follow your match assignment below—you may cover a different team when your regular teams play together." : "Ask an admin to assign your teams, or request to take over for another scout below."}</p>
         </div>
         <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto">
           {myAssignments.matchAssignments.map(slot => <Button key={`${slot.matchNumber}-${slot.teamNumber}`} size="sm" variant="outline" onClick={() => selectTeam(slot.matchNumber, slot.teamNumber)}>QM{slot.matchNumber} · {slot.label}</Button>)}
@@ -187,7 +189,7 @@ export function MatchScoutingRoute() {
             ))}
           </div>
           <p className="basis-full text-xs text-muted-foreground sm:ml-auto sm:basis-auto">
-            Select a team card to begin
+            Open your assigned team card to begin
           </p>
         </div>
         <div className="max-h-[34rem] overflow-y-auto">
@@ -248,6 +250,7 @@ export function MatchScoutingRoute() {
                   sortDirection={sortDirection}
                   tone="red"
                   selectedTeam={isSelected ? teamNumber : null}
+                  canSelect={(team) => canOpenReport(match.matchNumber, team)}
                   onSelect={(team) => {
                     selectTeam(match.matchNumber, team)
                   }}
@@ -260,6 +263,7 @@ export function MatchScoutingRoute() {
                   sortDirection={sortDirection}
                   tone="blue"
                   selectedTeam={isSelected ? teamNumber : null}
+                  canSelect={(team) => canOpenReport(match.matchNumber, team)}
                   onSelect={(team) => {
                     selectTeam(match.matchNumber, team)
                   }}
@@ -269,7 +273,7 @@ export function MatchScoutingRoute() {
           })}
         </div>
       </div>
-      {selectedMatch && teamNumber !== null && me && (
+      {selectedMatch && teamNumber !== null && me && canOpenReport(selectedMatch.matchNumber, teamNumber) && (
         <section ref={reportRef} tabIndex={-1} aria-label={`QM${selectedMatch.matchNumber} team ${teamNumber} match report`} className="scroll-mt-20 focus:outline-none">
         <MatchForm
           key={`${activeEvent._id}:${selectedMatch.matchNumber}:${teamNumber}:${me.tokenIdentifier}`}
@@ -292,6 +296,7 @@ function AllianceRow({
   sortDirection,
   tone,
   selectedTeam,
+  canSelect,
   onSelect,
 }: {
   label: string
@@ -301,6 +306,7 @@ function AllianceRow({
   sortDirection: SortDirection
   tone: "red" | "blue"
   selectedTeam: number | null
+  canSelect: (teamNumber: number) => boolean
   onSelect: (teamNumber: number) => void
 }) {
   const sortedTeams = sortTeamNumbers(teams, teamStats, teamSort, sortDirection)
@@ -320,9 +326,11 @@ function AllianceRow({
             key={team}
             type="button"
             onClick={() => onSelect(team)}
+            disabled={!canSelect(team)}
+            title={canSelect(team) ? "Open assigned match report" : "Assigned scouts only"}
             aria-pressed={selectedTeam === team}
             className={cn(
-              "grid min-w-0 gap-0.5 rounded-lg border px-2 py-2 text-left transition-[background-color,border-color,box-shadow,transform] hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "grid min-w-0 gap-0.5 rounded-lg border px-2 py-2 text-left transition-[background-color,border-color,box-shadow,transform] enabled:hover:-translate-y-px disabled:cursor-default disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               tone === "red"
                 ? "border-red-500/25 bg-red-500/8 text-red-800 hover:bg-red-500/15 dark:text-red-200"
                 : "border-blue-500/25 bg-blue-500/8 text-blue-800 hover:bg-blue-500/15 dark:text-blue-200",

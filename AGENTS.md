@@ -65,6 +65,12 @@ redirects here; keep project guidance here rather than duplicating it.
   closure, assignments, or report locks. Use client submission IDs to make
   retries idempotent. Device-local drafts are not submitted reports. Uploads
   require the app to be open; do not promise closed-app background syncing.
+  Pit submission immediately attempts the queued upload and shows success only
+  after Convex acknowledgement. Keep an inline retry error on upload failure;
+  freeze queued fields so subsequent edits cannot be silently ignored.
+  Foreground and background uploads share per-report locks and persisted photo
+  checkpoints. Surface all upload errors, retry transient failures automatically,
+  and recheck the canonical signed-in scout before uploading photos or reports.
 
 - Pit reports lock a team at that event after submission; match reports lock a
   team in that specific match. Reject repeat submissions from every role until
@@ -94,6 +100,13 @@ redirects here; keep project guidance here rather than duplicating it.
   unauthorized responses. Pending or cancelled handoffs never change ownership.
   Keep an event-scoped durable audit record with scout names, times, station,
   teams, and transferred match slots. Device drafts do not transfer.
+  Unassigned approved scouts can initiate a takeover by selecting an assigned
+  scout, even with their assignment checkbox unchecked. This request records
+  their readiness; only the original owner can finalize the transfer. Never let
+  a third party request or approve a transfer between two other scouts. Show
+  pending requests clearly and disable duplicate requests. When official results
+  or reports arrive during the handshake, advance its effective starting match
+  and transfer only the remaining slots; preserve newly finished ownership.
 - Preserve match responsibility before assignment changes. Finished/reported
   matches and matches before a confirmed handoff's boundary keep their recorded
   owners, including missing reports and late offline uploads. Only future slots
@@ -105,6 +118,11 @@ redirects here; keep project guidance here rather than duplicating it.
   the selected qualification match. Keep robot cycles, activities, ratings, and
   breakdown observations scout-entered. Retain manual results when the official
   source is unavailable or unposted; never invent TBA match keys for custom events.
+  On Matches, scouts may open a form or check submission status only for their
+  assigned robot in that specific match. Enforce the frontend card/form restriction
+  and backend query authorization. Revoke form access when assignments transfer;
+  retain access to the original scout's historical matches. Approved admins retain
+  oversight; official schedules and results remain viewable.
 - Match videos stay on Google Drive. Approved admins connect one HTTPS Drive
   folder per event. Other events accept `qm1.mp4`, `qm2.mp4`, and so on, while
   STEM Gals (`2026txmck`) requires `stem gals qm1.mp4`, never bare `qm1`.

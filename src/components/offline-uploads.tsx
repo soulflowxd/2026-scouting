@@ -1,9 +1,7 @@
 import { useConvex } from "convex/react"
-import { ConvexError } from "convex/values"
 import { useEffect, useState } from "react"
-import { api } from "../../convex/_generated/api"
-import type { Id } from "../../convex/_generated/dataModel"
-import { listUploads, putUpload, removeUpload, type UploadJob } from "@/lib/scouting-outbox"
+import { listUploads, putUpload, type UploadJob } from "@/lib/scouting-outbox"
+import { uploadScoutingReport } from "@/lib/upload-scouting-report"
 import { Button } from "@/components/ui/button"
 
 export function OfflineUploads({ owner }: { owner?: string }) {
@@ -20,32 +18,11 @@ export function OfflineUploads({ owner }: { owner?: string }) {
       try {
         const pending = await listUploads(owner!)
         if (active) setJobs(pending)
-        for (let job of pending) {
+        for (const job of pending) {
           if (!active || !convex.connectionState().isWebSocketConnected) break
-          if (job.error) continue
-          try {
-            if (job.kind === "pit") {
-              while (job.photos.length) {
-                if (!active) return
-                const photo = job.photos[0]
-                const url = await convex.mutation(api.pit.generateUploadUrl, {})
-                if (!active) return
-                const response = await fetch(url, { method: "POST", headers: { "Content-Type": photo.type }, body: photo })
-                if (!response.ok) throw new Error("Photo upload unavailable")
-                const { storageId } = await response.json() as { storageId: Id<"_storage"> }
-                job = { ...job, photos: job.photos.slice(1), args: { ...job.args, photoIds: [...(job.args.photoIds ?? []), storageId] } }
-                await putUpload(job)
-              }
-              if (!active) return
-              await convex.mutation(api.pit.save, { ...job.args, clientSubmissionId: job.id })
-            } else {
-              await convex.mutation(api.matchScouting.saveReport, { ...job.args, clientSubmissionId: job.id })
-            }
-            await removeUpload(job.id)
-          } catch (error) {
-            if (error instanceof ConvexError) await putUpload({ ...job, error: String(error.data) })
-            else break
-          }
+          if (job.error && !job.retryable) continue
+          try { await uploadScoutingReport(convex, owner!, job.id) }
+          catch { /* The shared uploader retains the report and a visible retry error. */ }
         }
         if (active) setJobs(await listUploads(owner!))
       } catch { if (active) setStorageError(true) }

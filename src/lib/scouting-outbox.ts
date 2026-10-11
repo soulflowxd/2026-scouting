@@ -4,7 +4,7 @@ import { api } from "../../convex/_generated/api"
 type Payload =
   | { kind: "pit"; args: FunctionArgs<typeof api.pit.save>; photos: File[] }
   | { kind: "match"; args: FunctionArgs<typeof api.matchScouting.saveReport>; photos: File[] }
-export type UploadJob = Payload & { id: string; owner: string; deployment: string; error?: string }
+export type UploadJob = Payload & { id: string; owner: string; deployment: string; error?: string; retryable?: boolean }
 const deployment = import.meta.env.VITE_CONVEX_URL
 let database: Promise<IDBDatabase> | undefined
 function db() {
@@ -30,8 +30,10 @@ export async function putUpload(job: UploadJob) {
   window.dispatchEvent(new Event("scouting-outbox"))
 }
 export async function queueReport(owner: string, payload: Payload) {
-  await putUpload({ ...payload, owner, deployment, id: crypto.randomUUID() })
+  const id = crypto.randomUUID()
+  await putUpload({ ...payload, owner, deployment, id })
   if (typeof navigator !== "undefined") void navigator.storage?.persist?.().catch(() => { /* Durable storage is best-effort; never block a saved submission. */ })
+  return id
 }
 export async function listUploads(owner: string) {
   const jobs = await access<UploadJob[]>("readonly", store => store.getAll())

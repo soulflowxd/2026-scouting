@@ -14,9 +14,9 @@ export function ScoutHandoffs() {
   return <section aria-label="Scout substitutions" className="mb-4 grid gap-2">
     {handoffs.map(claim => <div key={claim._id} className="grid gap-3 rounded-xl border border-primary/30 bg-card p-4">
       <div>
-        <h2 className="text-sm font-semibold">Assignment handoff · From QM{claim.fromMatchNumber} · {claim.matchSlots.length} matches</h2>
+        <h2 className="text-sm font-semibold">Assignment handoff · From QM{claim.fromMatchNumber} · {claim.matchSlots.length} match assignment{claim.matchSlots.length === 1 ? "" : "s"}</h2>
         <p className="mt-1 text-sm text-muted-foreground">{claim.incoming
-          ? `${claim.fromName || "A scout"} needs a break. ${claim.acceptedAt ? "You accepted. Waiting for their final confirmation." : "Confirm that you are ready to take over."}`
+          ? `Take over from ${claim.fromName || "another scout"}. ${claim.acceptedAt ? "You confirmed you are ready. Waiting for their final confirmation." : "Confirm that you are ready to take over."}`
           : `${claim.toName} ${claim.acceptedAt ? "accepted. Confirm the handoff before taking your break." : "has not accepted yet. Keep scouting until the handoff is complete."}`}</p>
       </div>
       <p className="text-xs text-muted-foreground">Earlier matches keep their original responsible scout. {claim.driverStations.length ? `Stations: ${claim.driverStations.join(", ")}` : `Teams: ${claim.teamLabels.join(", ") || "Match coverage only"}`}. Device drafts do not transfer.</p>

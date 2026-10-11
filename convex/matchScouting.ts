@@ -86,7 +86,8 @@ export const reportSubmitted = query({
   args: { eventId: v.id("events"), matchNumber: v.number(), teamNumber: v.number() },
   returns: v.boolean(),
   handler: async (ctx, args) => {
-    await requireApprovedUserFromDb(ctx)
+    const user = await requireApprovedUserFromDb(ctx)
+    await requireAssignedTeam(ctx, args, user)
     for await (const report of ctx.db.query("matchReports").withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", args.eventId).eq("matchNumber", args.matchNumber))) {
       if (report.teamNumber === args.teamNumber) return true
     }
