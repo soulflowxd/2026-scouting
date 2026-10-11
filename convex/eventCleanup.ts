@@ -5,7 +5,7 @@ import { internalAction, internalMutation } from "./_generated/server"
 const tables = [
   "pickedTeams", "teams", "matches", "externalStats", "winPredictions",
   "pitReports", "matchReports", "scoutAssignmentParticipants", "scoutTeamAssignments",
-  "matchRobotClaims", "breakdownFollowUps", "scoutNotifications", "pickListItems",
+  "matchRobotClaims", "scoutAssignmentHandoffs", "scoutDriverStationAssignments", "breakdownFollowUps", "scoutNotifications", "pickListItems",
   "pickLists", "mashVotes", "consensusItems", "consensusRuns",
 ] as const
 

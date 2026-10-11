@@ -85,19 +85,12 @@ test("late submissions remove only the corresponding missing item and admin dele
   expect((await admin.query(api.scoutAssignments.completionReport, { eventId })).missing.some(row => row.kind === "pit" && row.teamNumber === 2)).toBe(true)
 })
 
-test("claims and confirmed substitutes determine responsibility, not pending handoffs or assignment edits", async () => {
-  const { admin, alice, sub, eventId, claimId, subId } = await fixture()
+test("assignment edits do not transfer responsibility for an already finished match", async () => {
+  const { admin, eventId, subId } = await fixture()
   await admin.mutation(api.scoutAssignments.openCompletionReview, { eventId, matchNumber: 1 })
   await admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId: subId, included: true })
   await admin.mutation(api.scoutAssignments.assignTeam, { eventId, teamNumber: 1, memberId: subId })
-  const owner = async () => (await admin.query(api.scoutAssignments.completionReport, { eventId })).missing.find(row => row.kind === "match" && row.teamNumber === 1)?.name
-  expect(await owner()).toBe("Alice")
-  await alice.mutation(api.matchScouting.requestSubstitute, { claimId, substituteId: subId })
-  const requestedAt = (await sub.query(api.matchScouting.myHandoffs, {}))[0].breakRequestedAt!
-  await sub.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "accept" })
-  expect(await owner()).toBe("Alice")
-  await alice.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "confirm" })
-  expect(await owner()).toBe("Casey")
+  expect((await admin.query(api.scoutAssignments.completionReport, { eventId })).missing.find(row => row.kind === "match" && row.teamNumber === 1)?.name).toBe("Alice")
 })
 
 test("completion checks never count reports from another event", async () => {

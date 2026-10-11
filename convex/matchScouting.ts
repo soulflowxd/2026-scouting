@@ -119,167 +119,35 @@ export const matchesForEvent = query({
   },
 })
 
+// Compatibility endpoints for older open tabs. Claims are retired; reload for assignments.
 export const claimsForMatch = query({
   args: { eventId: v.id("events"), matchNumber: v.number() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("matchRobotClaims")
-      .withIndex("by_eventId_and_matchNumber_and_teamNumber_and_status", (q) =>
-        q.eq("eventId", args.eventId).eq("matchNumber", args.matchNumber),
-      )
-      .take(20)
-  },
+  handler: async () => [],
 })
-
 export const claimRobot = mutation({
   args: { eventId: v.id("events"), matchNumber: v.number(), teamNumber: v.number() },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUserFromDb(ctx)
+    await requireApprovedUserFromDb(ctx)
     await requireScoutingOpen(ctx, args.eventId)
-    for await (const report of ctx.db.query("matchReports").withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", args.eventId).eq("matchNumber", args.matchNumber))) {
-      if (report.teamNumber === args.teamNumber) throw new ConvexError("Match report already submitted. An admin must delete it before scouting this robot again.")
-    }
-    const activeForRobot = await ctx.db
-      .query("matchRobotClaims")
-      .withIndex("by_eventId_and_matchNumber_and_teamNumber_and_status", (q) =>
-        q
-          .eq("eventId", args.eventId)
-          .eq("matchNumber", args.matchNumber)
-          .eq("teamNumber", args.teamNumber)
-          .eq("status", "active"),
-      )
-      .unique()
-    if (activeForRobot && activeForRobot.scoutToken !== user.tokenIdentifier) {
-      throw new ConvexError(`Robot already claimed by ${activeForRobot.scoutName ?? "another scout"}. Ask them or an admin to release it.`)
-    }
-    if (activeForRobot) return activeForRobot._id
-    await requireAssignedTeam(ctx, args, user)
-
-    const activeForScout = await ctx.db
-      .query("matchRobotClaims")
-      .withIndex("by_eventId_and_matchNumber_and_scoutToken_and_status", (q) =>
-        q
-          .eq("eventId", args.eventId)
-          .eq("matchNumber", args.matchNumber)
-          .eq("scoutToken", user.tokenIdentifier)
-          .eq("status", "active"),
-      )
-      .unique()
-    if (activeForScout && activeForScout.teamNumber !== args.teamNumber) {
-      throw new ConvexError(`Scout already claimed team ${activeForScout.teamNumber} in this match. Release that claim before selecting another robot.`)
-    }
-
-    return await ctx.db.insert("matchRobotClaims", {
-      ...args,
-      scoutToken: user.tokenIdentifier,
-      scoutName: user.name ?? user.email ?? undefined,
-      status: "active",
-      claimedAt: Date.now(),
-    })
+    throw new ConvexError("Manual claims have been removed. Refresh the app and use your scouting assignments.")
   },
 })
-
 export const releaseClaim = mutation({
   args: { claimId: v.id("matchRobotClaims") },
-  handler: async (ctx, args) => {
-    const user = await requireApprovedUserFromDb(ctx)
-    const claim = await ctx.db.get(args.claimId)
-    if (!claim) throw new ConvexError("Claim not found")
-    if (claim.substituteToken) throw new ConvexError("Finish or cancel the substitute handoff before releasing this robot")
-    if (
-      claim.scoutToken !== user.tokenIdentifier &&
-      user.role !== "admin" &&
-      user.role !== "superAdmin"
-    ) {
-      throw new ConvexError("Only the scout who owns this claim or an admin can release it")
-    }
-    await ctx.db.patch(args.claimId, {
-      status: "released",
-      releasedAt: Date.now(),
-    })
-  },
+  handler: async (ctx) => { await requireApprovedUserFromDb(ctx); throw new ConvexError("Manual claims have been removed. Refresh the app.") },
 })
-
-export const availableSubstitutes = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await requireApprovedUserFromDb(ctx)
-    const members = await ctx.db.query("members").take(500)
-    return members.filter(member => !member.mergedInto && member.tokenIdentifier !== user.tokenIdentifier &&
-      (member.approvalStatus === undefined || member.approvalStatus === "approved"))
-      .map(member => ({ _id: member._id, name: member.name || "Scout" }))
-  },
-})
-
 export const requestSubstitute = mutation({
   args: { claimId: v.id("matchRobotClaims"), substituteId: v.id("members") },
-  handler: async (ctx, args) => {
-    const user = await requireApprovedUserFromDb(ctx)
-    const claim = await ctx.db.get(args.claimId)
-    if (!claim || claim.status !== "active" || claim.scoutToken !== user.tokenIdentifier) throw new ConvexError("Only the assigned scout can request a break")
-    await requireScoutingOpen(ctx, claim.eventId)
-    if (claim.substituteToken) throw new ConvexError("A substitute request is already pending")
-    const substitute = await ctx.db.get(args.substituteId)
-    if (!substitute || substitute.mergedInto || substitute.approvalStatus === "pending" || substitute.approvalStatus === "rejected" || substitute.tokenIdentifier === user.tokenIdentifier) throw new ConvexError("Choose another approved scout")
-    await ctx.db.patch(claim._id, { substituteToken: substitute.tokenIdentifier, substituteName: substitute.name || "Scout", breakRequestedAt: Date.now(), substituteAcceptedAt: undefined })
-  },
+  handler: async (ctx) => { await requireApprovedUserFromDb(ctx); throw new ConvexError("Refresh the app to hand off your scouting assignments.") },
 })
-
-export const myHandoffs = query({
-  args: {},
-  handler: async (ctx) => {
-    if (!await ctx.auth.getUserIdentity()) return []
-    const user = await requireApprovedUserFromDb(ctx)
-    const outgoing = await ctx.db.query("matchRobotClaims").withIndex("by_scoutToken", q => q.eq("scoutToken", user.tokenIdentifier)).order("desc").take(200)
-    const incoming = await ctx.db.query("matchRobotClaims").withIndex("by_substituteToken", q => q.eq("substituteToken", user.tokenIdentifier)).order("desc").take(200)
-    return [...outgoing, ...incoming].filter(claim => claim.status === "active" && claim.substituteToken && claim.breakRequestedAt)
-      .map(claim => ({ ...claim, incoming: claim.substituteToken === user.tokenIdentifier }))
-  },
-})
-
+export const myHandoffs = query({ args: {}, handler: async () => [] })
 export const confirmSubstitute = mutation({
   args: { claimId: v.id("matchRobotClaims"), requestedAt: v.number(), action: v.union(v.literal("accept"), v.literal("confirm"), v.literal("cancel")) },
-  handler: async (ctx, args) => {
-    const user = await requireApprovedUserFromDb(ctx)
-    const claim = await ctx.db.get(args.claimId)
-    if (!claim || claim.status !== "active" || !claim.substituteToken || claim.breakRequestedAt !== args.requestedAt) throw new ConvexError("This handoff is no longer active")
-    const owner = claim.scoutToken === user.tokenIdentifier
-    const substitute = claim.substituteToken === user.tokenIdentifier
-    if (!owner && !substitute) throw new ConvexError("Only these two scouts can confirm this handoff")
-    if (args.action === "cancel") {
-      await ctx.db.patch(claim._id, { substituteToken: undefined, substituteName: undefined, breakRequestedAt: undefined, substituteAcceptedAt: undefined })
-      return
-    }
-    await requireScoutingOpen(ctx, claim.eventId)
-    if (args.action === "accept" && !substitute) throw new ConvexError("The substitute must accept on their own account")
-    if (args.action === "confirm" && (!owner || !claim.substituteAcceptedAt)) throw new ConvexError("The substitute must accept before the original scout confirms")
-    const member = await ctx.db.query("members").withIndex("by_tokenIdentifier", q => q.eq("tokenIdentifier", claim.substituteToken!)).unique()
-    if (!member || member.mergedInto || member.approvalStatus === "rejected" || member.approvalStatus === "pending") throw new ConvexError("The substitute is no longer approved")
-    const occupied = await ctx.db.query("matchRobotClaims").withIndex("by_eventId_and_matchNumber_and_scoutToken_and_status", q => q.eq("eventId", claim.eventId).eq("matchNumber", claim.matchNumber).eq("scoutToken", claim.substituteToken!).eq("status", "active")).unique()
-    if (occupied) throw new ConvexError("The substitute already has a robot assigned in this match")
-    if (args.action === "accept") {
-      await ctx.db.patch(claim._id, { substituteAcceptedAt: Date.now() })
-      return
-    }
-    await ctx.db.patch(claim._id, {
-      handoffFromToken: claim.scoutToken, handoffCompletedAt: Date.now(),
-      scoutToken: claim.substituteToken, scoutName: claim.substituteName,
-      substituteToken: undefined, substituteName: undefined, breakRequestedAt: undefined, substituteAcceptedAt: undefined,
-    })
-  },
+  handler: async (ctx) => { await requireApprovedUserFromDb(ctx); throw new ConvexError("Refresh the app to hand off your scouting assignments.") },
 })
-
 export const adminReleaseClaim = mutation({
   args: { claimId: v.id("matchRobotClaims") },
-  handler: async (ctx, args) => {
-    await requireAdminFromDb(ctx)
-    const claim = await ctx.db.get(args.claimId)
-    if (!claim) throw new Error("Claim not found")
-    await ctx.db.patch(args.claimId, {
-      status: "released",
-      releasedAt: Date.now(),
-    })
-  },
+  handler: async (ctx) => { await requireAdminFromDb(ctx); throw new ConvexError("Manual claims have been removed.") },
 })
 
 export const saveReport = mutation({
@@ -305,44 +173,20 @@ export const saveReport = mutation({
       if (!args.offShiftActivity?.trim()) throw new ConvexError("Describe what the robot does off-shift")
       if (separateShifts && !args.transitionActivity?.trim()) throw new ConvexError("Describe what the robot does in transition")
     }
-    const claim = await ctx.db
-      .query("matchRobotClaims")
-      .withIndex("by_eventId_and_matchNumber_and_teamNumber_and_status", (q) =>
-        q
-          .eq("eventId", args.eventId)
-          .eq("matchNumber", args.matchNumber)
-          .eq("teamNumber", args.teamNumber)
-          .eq("status", "active"),
-      )
-      .unique()
-    if (claim && claim.scoutToken !== user.tokenIdentifier) {
-      throw new ConvexError("Robot already claimed by another scout")
-    }
-    if (!claim) {
-      await requireAssignedTeam(ctx, args, user)
-      const activeForScout = await ctx.db
-        .query("matchRobotClaims")
-        .withIndex("by_eventId_and_matchNumber_and_scoutToken_and_status", (q) =>
+    const existing = await ctx.db
+      .query("matchReports")
+      .withIndex(
+        "by_eventId_and_matchNumber_and_teamNumber_and_scoutToken",
+        (q) =>
           q
             .eq("eventId", args.eventId)
             .eq("matchNumber", args.matchNumber)
-            .eq("scoutToken", user.tokenIdentifier)
-            .eq("status", "active"),
-        )
-        .unique()
-      if (activeForScout && activeForScout.teamNumber !== args.teamNumber) {
-        throw new ConvexError(`Scout already claimed team ${activeForScout.teamNumber} in this match. Release that claim first.`)
-      }
-      await ctx.db.insert("matchRobotClaims", {
-        eventId: args.eventId,
-        matchNumber: args.matchNumber,
-        teamNumber: args.teamNumber,
-        scoutToken: user.tokenIdentifier,
-        scoutName: user.name ?? user.email ?? undefined,
-        status: "active",
-        claimedAt: Date.now(),
-      })
-    }
+            .eq("teamNumber", args.teamNumber),
+      )
+      .order("desc").first()
+
+    if (existing) throw new ConvexError("Match report already submitted. An admin must delete it before scouting this robot again.")
+    await requireAssignedTeam(ctx, args, user)
 
     const tags = args.tags.filter((tag) => tagAllowlist.has(tag)).slice(0, 12)
     const match = await ctx.db.query("matches").withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", args.eventId).eq("matchNumber", args.matchNumber)).unique()
@@ -364,19 +208,6 @@ export const saveReport = mutation({
       updatedAt: Date.now(),
     }
 
-    const existing = await ctx.db
-      .query("matchReports")
-      .withIndex(
-        "by_eventId_and_matchNumber_and_teamNumber_and_scoutToken",
-        (q) =>
-          q
-            .eq("eventId", args.eventId)
-            .eq("matchNumber", args.matchNumber)
-            .eq("teamNumber", args.teamNumber),
-      )
-      .order("desc").first()
-
-    if (existing) throw new ConvexError("Match report already submitted. An admin must delete it before scouting this robot again.")
     if (args.autoPath && (args.autoPath.length > 200 || args.autoPath.reduce((count, path) => count + path.length, 0) > 2000 || args.autoPath.some(path => !path.length || path.some(({ x, y }) => !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1000 || y < 0 || y > 500)))) {
       throw new ConvexError("Observed auto path is invalid or too large")
     }

@@ -4,7 +4,8 @@ import type { Id } from "../_generated/dataModel"
 import { assignmentContext, matchPlan } from "./scoutMatchAssignments"
 export async function requireAssignedTeam(ctx: MutationCtx, args: { eventId: Id<"events">; teamNumber: number; matchNumber: number }, user: { tokenIdentifier: string; role: string }) {
   const event = await ctx.db.get(args.eventId)
-  if (!event?.scoutAssignmentsEnabled || user.role === "admin" || user.role === "superAdmin") return
+  if (user.role === "admin" || user.role === "superAdmin") return
+  if (!event?.scoutAssignmentsEnabled) throw new ConvexError("Ask an admin to enable and generate scouting assignments for this event")
   const match = await ctx.db.query("matches").withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", args.eventId).eq("matchNumber", args.matchNumber)).unique()
   if (match) {
     const context = await assignmentContext(ctx, args.eventId)

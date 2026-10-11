@@ -28,9 +28,10 @@ test("TBA parsing handles fuel-based auto, ties, unplayed and incomplete matches
 
 async function fixture(eventKey = "2026test") {
   const t = convexTest(schema, modules)
-  const eventId = await t.run(ctx => ctx.db.insert("events", { eventKey, importStatus: "ready", createdByToken: "scout" }))
+  const eventId = await t.run(ctx => ctx.db.insert("events", { eventKey, importStatus: "ready", createdByToken: "scout", scoutAssignmentsEnabled: true }))
   const matchId = await t.run(ctx => ctx.db.insert("matches", { eventId, tbaMatchKey: `${eventKey}_qm1`, matchNumber: 1, redTeams: [9994, 2, 3], blueTeams: [4, 5, 6] }))
-  await t.run(ctx => ctx.db.insert("members", { email: "scout@example.com", name: "Scout", role: "scout", approvalStatus: "approved", tokenIdentifier: "scout", lastSeenAt: 1 }))
+  const memberId = await t.run(ctx => ctx.db.insert("members", { email: "scout@example.com", name: "Scout", role: "scout", approvalStatus: "approved", tokenIdentifier: "scout", lastSeenAt: 1 }))
+  await t.run(ctx => ctx.db.insert("scoutTeamAssignments", { eventId, teamNumber: 9994, memberId }))
   const scout = t.withIdentity({ tokenIdentifier: "scout", subject: "scout", issuer: "test", email: "scout@example.com" })
   return { t, scout, eventId, matchId }
 }

@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import { requireAdminFromDb, requireApprovedUserFromDb } from "./lib/authz"
 import { planScoutGroups } from "./lib/scoutAssignmentPlan"
-import { assignmentContext, matchPlan } from "./lib/scoutMatchAssignments"
+import { assignmentContext, matchHasStarted, matchPlan, preserveAssignmentHistory } from "./lib/scoutMatchAssignments"
 import type { Id } from "./_generated/dataModel"
 import { completionResponsibilities, ensureCompletionReview } from "./lib/scoutingCompletion"
 
@@ -60,9 +60,7 @@ export const completionReport = query({
     for (const selected of reviewedMatches) {
       const reports = await ctx.db.query("matchReports").withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", eventId).eq("matchNumber", selected.matchNumber)).take(500)
       const completed = new Set(reports.map(report => report.teamNumber))
-      const claims = (await ctx.db.query("matchRobotClaims").withIndex("by_eventId_and_matchNumber_and_teamNumber_and_status", q => q.eq("eventId", eventId).eq("matchNumber", selected.matchNumber)).take(500)).filter(claim => claim.status === "active")
-      // Claims retain the real owner after edits; a confirmed handoff changes this owner atomically.
-      const owners = new Map(completionResponsibilities(context, selected, claims).map(slot => [slot.teamNumber, slot.scoutName]))
+      const owners = new Map(completionResponsibilities(context, selected).map(slot => [slot.teamNumber, slot.scoutName]))
       for (const teamNumber of new Set([...selected.redTeams, ...selected.blueTeams])) {
         if (completed.has(teamNumber)) continue
         const name = owners.get(teamNumber)
@@ -91,7 +89,7 @@ export const adminList = query({
     const members = context.members
     const matches = await ctx.db.query("matches").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)
     const matchAssignments = matches.map(match => ({ matchNumber: match.matchNumber, slots: matchPlan(context, match), uncovered: [...match.redTeams, ...match.blueTeams].length - matchPlan(context, match).length }))
-    return { enabled: event?.scoutAssignmentsEnabled ?? false, participants: context.scouts, assignments, teams, matchAssignments, members: members.map(member => ({ _id: member._id, name: member.name || member.email || "Scout" })) }
+    return { enabled: event?.scoutAssignmentsEnabled ?? false, mode: event?.scoutAssignmentMode ?? "automatic", stations: context.stations, participants: context.scouts, assignments, teams, matchAssignments: await Promise.all(matchAssignments.map(async plan => ({ ...plan, started: await matchHasStarted(ctx, matches.find(match => match.matchNumber === plan.matchNumber)!) }))), members: members.map(member => ({ _id: member._id, name: member.name || member.email || "Scout" })) }
   },
 })
 export const setParticipant = mutation({
@@ -101,10 +99,12 @@ export const setParticipant = mutation({
     if (!await ctx.db.get(args.eventId)) throw new ConvexError("Event not found")
     const member = await ctx.db.get(args.memberId)
     if (!member || member.mergedInto || member.approvalStatus === "pending" || member.approvalStatus === "rejected") throw new ConvexError("Choose an approved scout")
+    await preserveAssignmentHistory(ctx, args.eventId)
     const existing = await ctx.db.query("scoutAssignmentParticipants").withIndex("by_eventId_and_memberId", q => q.eq("eventId", args.eventId).eq("memberId", args.memberId)).unique()
     if (existing) await ctx.db.patch(existing._id, { included: args.included })
     else await ctx.db.insert("scoutAssignmentParticipants", { eventId: args.eventId, memberId: args.memberId, included: args.included })
     if (!args.included) {
+      for (const station of await ctx.db.query("scoutDriverStationAssignments").withIndex("by_eventId_and_memberId", q => q.eq("eventId", args.eventId).eq("memberId", args.memberId)).take(6)) await ctx.db.delete(station._id)
       const rows = await ctx.db.query("scoutTeamAssignments").withIndex("by_eventId_and_memberId", q => q.eq("eventId", args.eventId).eq("memberId", args.memberId)).take(500)
       for (const row of rows) await ctx.db.delete(row._id)
     }
@@ -112,7 +112,36 @@ export const setParticipant = mutation({
 })
 export const setEnabled = mutation({
   args: { ...eventArgs, enabled: v.boolean() },
-  handler: async (ctx, args) => { await requireAdminFromDb(ctx); await ctx.db.patch(args.eventId, { scoutAssignmentsEnabled: args.enabled }) },
+  handler: async (ctx, args) => { await requireAdminFromDb(ctx); await preserveAssignmentHistory(ctx, args.eventId); await ctx.db.patch(args.eventId, { scoutAssignmentsEnabled: args.enabled }) },
+})
+export const setMode = mutation({
+  args: { ...eventArgs, mode: v.union(v.literal("automatic"), v.literal("manual")) },
+  handler: async (ctx, args) => {
+    await requireAdminFromDb(ctx)
+    if (!await ctx.db.get(args.eventId)) throw new ConvexError("Event not found")
+    await preserveAssignmentHistory(ctx, args.eventId)
+    await ctx.db.patch(args.eventId, { scoutAssignmentMode: args.mode, scoutAssignmentsEnabled: true })
+  },
+})
+
+export const assignStation = mutation({
+  args: { ...eventArgs, station: v.union(v.literal("Red1"), v.literal("Red2"), v.literal("Red3"), v.literal("Blue1"), v.literal("Blue2"), v.literal("Blue3")), memberId: v.union(v.id("members"), v.null()) },
+  handler: async (ctx, args) => {
+    await requireAdminFromDb(ctx)
+    const context = await assignmentContext(ctx, args.eventId)
+    if (context.event?.scoutAssignmentMode !== "manual") throw new ConvexError("Switch to manual assignment mode first")
+    if (args.memberId) {
+      const member = context.members.find(member => member._id === args.memberId)
+      if (!member || !context.scouts.includes(member._id)) throw new ConvexError("Choose an included, approved scout")
+      if (context.stations.some(slot => slot.memberId === member._id && slot.station !== args.station)) throw new ConvexError("This scout already has a driver station. Clear their other station first.")
+    }
+    await preserveAssignmentHistory(ctx, args.eventId)
+    const existing = context.stations.find(slot => slot.station === args.station)
+    if (existing) {
+      if (args.memberId) await ctx.db.patch(existing._id, { memberId: args.memberId })
+      else await ctx.db.delete(existing._id)
+    } else if (args.memberId) await ctx.db.insert("scoutDriverStationAssignments", { eventId: args.eventId, station: args.station, memberId: args.memberId })
+  },
 })
 export const generate = mutation({
   args: eventArgs,
@@ -124,11 +153,12 @@ export const generate = mutation({
     const teams = (await ctx.db.query("teams").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)).filter(team => !team.mergedIntoTeamNumber)
     if (!teams.length) throw new ConvexError("Import the event roster first")
     const matches = await ctx.db.query("matches").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)
+    await preserveAssignmentHistory(ctx, eventId)
     const plan = planScoutGroups(teams.map(team => team.teamNumber), scouts)
     const existing = await ctx.db.query("scoutTeamAssignments").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", eventId)).take(500)
     for (const row of existing) await ctx.db.delete(row._id)
     for (const row of plan) await ctx.db.insert("scoutTeamAssignments", { eventId, teamNumber: row.teamNumber, memberId: row.scout as Id<"members"> })
-    await ctx.db.patch(eventId, { scoutAssignmentsEnabled: true, scoutAssignmentSeed: Math.floor(Math.random() * 2147483647) })
+    await ctx.db.patch(eventId, { scoutAssignmentsEnabled: true, scoutAssignmentMode: "automatic", scoutAssignmentSeed: Math.floor(Math.random() * 2147483647) })
     return { assigned: plan.length, unassigned: teams.length - plan.length, hasSchedule: matches.length > 0 }
   },
 })
@@ -143,11 +173,13 @@ export const assignTeam = mutation({
       const participant = await ctx.db.query("scoutAssignmentParticipants").withIndex("by_eventId_and_memberId", q => q.eq("eventId", args.eventId).eq("memberId", args.memberId!)).unique()
       if (participant?.included === false || !member || member.mergedInto || member.approvalStatus === "pending" || member.approvalStatus === "rejected") throw new ConvexError("Choose an included, approved scout")
     }
+    await preserveAssignmentHistory(ctx, args.eventId)
     const existing = await ctx.db.query("scoutTeamAssignments").withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", args.eventId).eq("teamNumber", args.teamNumber)).unique()
     if (existing) {
       if (args.memberId) await ctx.db.patch(existing._id, { memberId: args.memberId })
       else await ctx.db.delete(existing._id)
     } else if (args.memberId) await ctx.db.insert("scoutTeamAssignments", { eventId: args.eventId, teamNumber: args.teamNumber, memberId: args.memberId })
+    await ctx.db.patch(args.eventId, { scoutAssignmentsEnabled: true })
   },
 })
 export const mine = query({
@@ -161,6 +193,6 @@ export const mine = query({
     const matches = await ctx.db.query("matches").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)
     const label = (teamNumber: number) => roster.find(team => team.teamNumber === teamNumber)?.eventTeamAlias || String(teamNumber)
     const matchAssignments = matches.flatMap(match => matchPlan(context, match).filter(slot => slot.scout === user.memberId).map(slot => ({ matchNumber: match.matchNumber, teamNumber: slot.teamNumber, label: label(slot.teamNumber) }))).sort((a, b) => a.matchNumber - b.matchNumber)
-    return { enabled: event?.scoutAssignmentsEnabled ?? false, hasSchedule: matches.length > 0, matchAssignments, teams: assignments.map(row => ({ teamNumber: row.teamNumber, label: label(row.teamNumber) })) }
+    return { enabled: event?.scoutAssignmentsEnabled ?? false, mode: event?.scoutAssignmentMode ?? "automatic", driverStations: context.stations.filter(slot => slot.memberId === user.memberId).map(slot => slot.station), hasSchedule: matches.length > 0, matchAssignments, teams: assignments.map(row => ({ teamNumber: row.teamNumber, label: label(row.teamNumber) })) }
   },
 })

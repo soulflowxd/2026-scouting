@@ -73,14 +73,34 @@ redirects here; keep project guidance here rather than duplicating it.
   official results and independent breakdown follow-ups; retract unsupported
   breakdown alerts when the final reporting match report is removed.
 
-- Admins choose event-specific participants for randomized regular-team scouting
-  assignments. Balance all teams across available scouts without a fixed group
-  limit. If regular teams overlap in a match, choose one randomly and use free
-  scouts to cover other robots. Seed match choices so all devices agree; assign
-  at most one robot per scout per match and leave coverage gaps visible. Assignment edits must not
-  transfer active claims or bypass the two-person substitute handoff. Enforce
-  assignment-only mode on backend claims and new reports, while allowing an
-  existing claim owner or confirmed substitute to finish their report.
+- Scouting uses assignments directly; no manual robot claims or release controls.
+  Require assignment ownership on scout match submissions; admins retain their
+  report override. Retain legacy claim rows as audit data, never as live locks.
+  Old claim endpoints only direct stale clients to refresh; they create no claims.
+- Admins choose event-specific participants and an Automatic or Manual mode.
+  Automatic mode balances regular-team groups without a fixed limit, randomizes
+  same-match conflicts consistently across devices, and uses spare scouts for
+  uncovered robots. Manual mode assigns approved included scouts to Red1–Red3
+  and Blue1–Blue3; map stations to the ordered alliance roster for each match.
+  Do not randomize or add spare scouts in manual mode. Keep regular/pit team
+  assignments separate. Enforce at most one driver station and robot per scout
+  per match; leave missing station coverage visible.
+- Assignment handoffs transfer the original scout's regular teams, applicable
+  driver station, and exact remaining match slots from a selected starting QM.
+  Require the recipient to accept and the original scout to confirm, on their
+  own approved accounts. Unchecked/excluded approved scouts may receive handoffs;
+  include the recipient and exclude the original scout only on final confirmation.
+  Reject overlapping recipient assignments, stale scopes, closed events, and
+  unauthorized responses. Pending or cancelled handoffs never change ownership.
+  Keep an event-scoped durable audit record with scout names, times, station,
+  teams, and transferred match slots. Device drafts do not transfer.
+- Preserve match responsibility before assignment changes. Finished/reported
+  matches and matches before a confirmed handoff's boundary keep their recorded
+  owners, including missing reports and late offline uploads. Only future slots
+  transfer; handoffs and later reassignments must not rewrite earlier accountability.
+  Show handoff requests and history without requiring a claim or opening a report.
+  Missing scouting reports use a collapsed disclosure on mobile and desktop;
+  keep filters, copy/paste, and separate coverage gaps available when expanded.
 - Match scouting automatically syncs available official TBA or FIRST alliance results for
   the selected qualification match. Keep robot cycles, activities, ratings, and
   breakdown observations scout-entered. Retain manual results when the official
@@ -148,7 +168,7 @@ redirects here; keep project guidance here rather than duplicating it.
 - Rebellious 9994 is the same NTX robot as 10014R, not an additional team.
   Keep the duplicate archived and recoverable rather than deleting reports.
 - Admins control scouting submissions per event in Event setup. Enforce closed
-  events on the backend for pit saves, match claims/reports, and breakdown
+  events on the backend for pit saves, match reports, assignment handoffs, and breakdown
   follow-ups, including admin submissions. New events start closed; legacy
   events without the setting remain open. Viewing data and rankings stays open.
 - Breakdown alerts remain unresolved until a required follow-up form is saved.

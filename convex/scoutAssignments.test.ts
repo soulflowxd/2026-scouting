@@ -55,8 +55,8 @@ test("per-match permissions follow the randomized assignment rather than every r
   expect(mine.matchAssignments[0].teamNumber).not.toBe(theirs.matchAssignments[0].teamNumber)
   expect((await scout.query(api.scoutAssignments.mine, { eventId })).matchAssignments).toEqual(mine.matchAssignments)
   const otherHomeTeam = mine.teams.find(team => team.teamNumber !== mine.matchAssignments[0].teamNumber)!
-  await expect(scout.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: otherHomeTeam.teamNumber })).rejects.toThrow("assigned teams only")
-  await scout.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: mine.matchAssignments[0].teamNumber })
+  await expect(scout.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: otherHomeTeam.teamNumber, autoFuel: 0, teleopFuel: 0, autoClimb: "none" as const, autoNotes: "", teleopNotes: "", endgameClimb: "none" as const, endgameNotes: "", driverRating: 5, defenseRating: 5, tags: [] })).rejects.toThrow("assigned teams only")
+  await scout.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: mine.matchAssignments[0].teamNumber, autoFuel: 0, teleopFuel: 0, autoClimb: "none" as const, autoNotes: "", teleopNotes: "", endgameClimb: "none" as const, endgameNotes: "", driverRating: 5, defenseRating: 5, tags: [] })
   const overview = await admin.query(api.scoutAssignments.adminList, { eventId })
   expect(overview.matchAssignments[0].uncovered).toBe(4)
 })
@@ -125,26 +125,17 @@ test("manual editing allows overlapping groups without a cap, but validates rost
   expect((await scout.query(api.scoutAssignments.mine, { eventId })).teams).toHaveLength(0)
 })
 
-test("scouts are restricted to assigned teams while existing claims and handoffs stay valid", async () => {
+test("scouts submit assigned reports directly and assignment mode is enforced on the backend", async () => {
   const { admin, scout, sub, eventId, memberId, subId } = await fixture()
   await admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId: subId, included: false })
   await admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId, included: true })
   await admin.mutation(api.scoutAssignments.assignTeam, { eventId, teamNumber: 1, memberId })
   await admin.mutation(api.scoutAssignments.setEnabled, { eventId, enabled: true })
-  await expect(scout.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 2 })).rejects.toThrow("assigned teams only")
-  await expect(sub.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: 2, autoFuel: 0, teleopFuel: 0, autoClimb: "none", autoNotes: "", teleopNotes: "", endgameClimb: "none", endgameNotes: "", driverRating: 5, defenseRating: 5, tags: [] })).rejects.toThrow("assigned teams only")
-  const claimId = await scout.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 1 })
-  await admin.mutation(api.scoutAssignments.setParticipant, { eventId, memberId, included: false })
-  expect(await scout.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 1 })).toBe(claimId)
-  const substituteId = (await scout.query(api.matchScouting.availableSubstitutes, {})).find(member => member.name === "Sub")!._id
-  await scout.mutation(api.matchScouting.requestSubstitute, { claimId, substituteId })
-  const requestedAt = (await sub.query(api.matchScouting.myHandoffs, {}))[0].breakRequestedAt!
-  await sub.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "accept" })
-  await scout.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "confirm" })
-  expect(await sub.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 1 })).toBe(claimId)
-  await sub.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: 1, autoFuel: 0, teleopFuel: 0, autoClimb: "none", autoNotes: "", autoPath: [[{ x: 100, y: 200 }]], teleopNotes: "", endgameClimb: "none", endgameNotes: "", driverRating: 5, defenseRating: 5, tags: [] })
+  const input = { eventId, matchNumber: 1, teamNumber: 1, autoFuel: 0, teleopFuel: 0, autoClimb: "none" as const, autoNotes: "", teleopNotes: "", endgameClimb: "none" as const, endgameNotes: "", driverRating: 5, defenseRating: 5, tags: [] }
+  await expect(sub.mutation(api.matchScouting.saveReport, input)).rejects.toThrow("assigned teams only")
+  await scout.mutation(api.matchScouting.saveReport, input)
   await admin.mutation(api.scoutAssignments.setEnabled, { eventId, enabled: false })
-  await scout.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 2, teamNumber: 2 })
+  await expect(scout.mutation(api.matchScouting.saveReport, { ...input, teamNumber: 2 })).rejects.toThrow("enable")
 })
 
 test("approved people join automatically and event-specific exclusions survive approvals and regeneration", async () => {

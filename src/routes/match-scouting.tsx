@@ -1,4 +1,4 @@
-import { useAction, useMutation, useQuery } from "convex/react"
+import { useAction, useQuery } from "convex/react"
 import { queueReport } from "@/lib/scouting-outbox"
 import { ConvexError } from "convex/values"
 import { Check, Clock3, ListFilter } from "lucide-react"
@@ -7,6 +7,7 @@ import { useBeforeUnload, useBlocker } from "react-router"
 import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
+import { AssignmentHandoff } from "@/components/assignment-handoff"
 import { Stepper } from "@/components/stepper"
 import { AutoPath, type PathPoint } from "@/components/auto-path"
 import { MatchVideoLink } from "@/components/match-video"
@@ -124,7 +125,7 @@ export function MatchScoutingRoute() {
         <div className="grid gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">Match scouting</h1>
           <p className="text-sm text-muted-foreground">
-            {eventLabel(activeEvent)} · Select a team to claim its robot and start scouting.
+            {eventLabel(activeEvent)} · Open your assigned match and team to start scouting.
           </p>
         </div>
         <div className="rounded-md border bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground">
@@ -132,14 +133,15 @@ export function MatchScoutingRoute() {
         </div>
       </div>
       <MatchVideoFolder key={activeEvent._id} eventId={activeEvent._id} settings={driveVideos.settings} canEdit={me?.role === "admin"} loading={driveVideos.loading} count={driveVideos.videos.length} error={driveVideos.error} onRefresh={driveVideos.refresh} />
-      {myAssignments?.enabled && <section className="grid gap-3 rounded-xl border border-primary/30 bg-card p-4" aria-label="My scouting assignments">
-        <div><h2 className="text-sm font-semibold">Your regular teams: {myAssignments.teams.map(team => team.label).join(", ") || "None assigned yet"}</h2>
-          <p className="mt-1 text-xs text-muted-foreground">{myAssignments.teams.length || myAssignments.matchAssignments.length ? "Your group size depends on available scouts. If your teams play together, follow the match assignment below—you may cover a different team." : "Ask an admin to include you and assign your teams. Confirmed substitute handoffs still work."}</p>
+      {myAssignments && <section className="grid gap-3 rounded-xl border border-primary/30 bg-card p-4" aria-label="My scouting assignments">
+        <div><h2 className="text-sm font-semibold">{myAssignments.mode === "manual" ? `Your driver station: ${myAssignments.driverStations.join(", ") || "Not assigned yet"}` : `Your regular teams: ${myAssignments.teams.map(team => team.label).join(", ") || "None assigned yet"}`}</h2>
+          <p className="mt-1 text-xs text-muted-foreground">{myAssignments.mode === "manual" ? "Scout the team in your assigned driver station for each match. Open a match shortcut below to start scouting." : myAssignments.teams.length || myAssignments.matchAssignments.length ? "Follow your match assignment below—you may cover a different team when your regular teams play together." : "Ask an admin to include you and assign your teams. Approved scouts can accept a handoff even when not included."}</p>
         </div>
         <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto">
           {myAssignments.matchAssignments.map(slot => <Button key={`${slot.matchNumber}-${slot.teamNumber}`} size="sm" variant="outline" onClick={() => selectTeam(slot.matchNumber, slot.teamNumber)}>QM{slot.matchNumber} · {slot.label}</Button>)}
           {!myAssignments.hasSchedule && <p className="text-xs text-muted-foreground">Match assignments will appear when the event schedule is available.</p>}
         </div>
+        <AssignmentHandoff key={activeEvent._id} eventId={activeEvent._id} closed={activeEvent.scoutingEnabled === false} />
       </section>}
       <div className="overflow-hidden rounded-xl border bg-card">
         <div className="flex flex-wrap items-center gap-3 border-b bg-muted/25 px-3 py-3 sm:px-4">
@@ -388,7 +390,6 @@ function MatchForm({
   matchNumber: number
   teamNumber: number
 }) {
-  const claims = useQuery(api.matchScouting.claimsForMatch, { eventId, matchNumber })
   const tbaMatch = useQuery(api.tbaMatches.forMatch, { eventId, matchNumber })
   const refreshTba = useAction(api.tbaMatches.refresh)
   const [tbaStatus, setTbaStatus] = useState("loading")
@@ -404,13 +405,7 @@ function MatchForm({
   }, [eventId, matchNumber, refreshTba])
   const scoutingClosed = useQuery(api.events.list)?.find(event => event._id === eventId)?.scoutingEnabled === false
   const me = useQuery(api.members.me)
-  const releaseClaim = useMutation(api.matchScouting.releaseClaim)
   const assignments = useQuery(api.scoutAssignments.mine, { eventId })
-  const substitutes = useQuery(api.matchScouting.availableSubstitutes)
-  const requestSubstitute = useMutation(api.matchScouting.requestSubstitute)
-  const [substituteId, setSubstituteId] = useState("")
-  const [requestingSub, setRequestingSub] = useState(false)
-  const claimRobot = useMutation(api.matchScouting.claimRobot)
   const reportSubmitted = useQuery(api.matchScouting.reportSubmitted, { eventId, matchNumber, teamNumber })
   const draftKey = `scouting:match-draft:${scoutToken}:${eventId}:${matchNumber}:${teamNumber}`
   const [initialDraft] = useState(() => {
@@ -456,34 +451,7 @@ function MatchForm({
     if (dirty) { event.preventDefault(); event.returnValue = "" }
   })
   const blocker = useBlocker(dirty && !saving)
-  const claim = claims?.find((item) => item.teamNumber === teamNumber && item.status === "active")
-  const myClaim = claims?.find((item) => item.scoutToken === me?.tokenIdentifier && item.status === "active")
-  const claimedByOther = !!claim && claim.scoutToken !== me?.tokenIdentifier
-  const allowedByAssignment = !!assignments && (!assignments.enabled || me?.role === "admin" || (assignments.hasSchedule ? assignments.matchAssignments.some(slot => slot.matchNumber === matchNumber && slot.teamNumber === teamNumber) : assignments.teams.some(team => team.teamNumber === teamNumber)) || (!!claim && claim.scoutToken === me?.tokenIdentifier))
-  const [claimPending, setClaimPending] = useState(false)
-
-  async function onRelease() {
-    if (!myClaim) return
-    setClaimPending(true)
-    try {
-      await releaseClaim({ claimId: myClaim._id })
-      toast.success(`Released team ${myClaim.teamNumber}`)
-    } catch (error) {
-      toast.error(error instanceof ConvexError ? String(error.data) : "Could not release claim. Please try again.")
-    } finally { setClaimPending(false) }
-  }
-
-  async function onClaim() {
-    setClaimPending(true)
-    try {
-      await claimRobot({ eventId, matchNumber, teamNumber })
-      toast.success(`Claimed ${teamNumber} in QM${matchNumber}`)
-    } catch (error) {
-      toast.error(error instanceof ConvexError ? String(error.data) : "Could not claim robot. Please try again.")
-    } finally {
-      setClaimPending(false)
-    }
-  }
+  const allowedByAssignment = !!assignments && (me?.role === "admin" || (assignments.enabled && (assignments.hasSchedule ? assignments.matchAssignments.some(slot => slot.matchNumber === matchNumber && slot.teamNumber === teamNumber) : assignments.teams.some(team => team.teamNumber === teamNumber))))
 
   async function onSubmit() {
     if (savingRef.current) return
@@ -529,42 +497,9 @@ function MatchForm({
       {reportSubmitted && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">Report already submitted for team {teamNumber} in QM{matchNumber}. An admin must delete it in team details before this robot can be scouted again.</p>}
       <fieldset disabled={saving || reportSubmitted !== false} className="grid min-w-0 gap-4">
       <div className="rounded-xl border bg-card p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-semibold">
-              QM{matchNumber} · Team {teamNumber}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {claimedByOther ? `Claimed by ${claim?.scoutName ?? "another scout"}` : claim ? "Claimed by you" : myClaim ? `You have team ${myClaim.teamNumber} claimed in this match` : "Claim required before submit"}
-            </p>
-            {assignments?.enabled && !allowedByAssignment && <p className="mt-1 text-xs text-muted-foreground">This isn’t your assignment for this match. Check your match shortcuts above, ask an admin to update the assignments, or accept a substitute handoff.</p>}
-          </div>
-          <div className="flex flex-wrap gap-2">
-          {myClaim && <Button type="button" variant="outline" disabled={claimPending || !!myClaim.substituteToken} onClick={() => void onRelease()}>Release team {myClaim.teamNumber}</Button>}
-          <Button type="button" onClick={() => void onClaim()} disabled={!allowedByAssignment || scoutingClosed || claims === undefined || me === undefined || Boolean(claim) || Boolean(myClaim) || claimPending}>
-            Claim
-          </Button>
-          </div>
-        </div>
+        <h2 className="text-xl font-semibold">QM{matchNumber} · Team {teamNumber}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{allowedByAssignment ? "Ready to scout" : assignments?.enabled ? "This robot is not your assignment. Open your match shortcut above or arrange an assignment handoff." : "Ask an admin to set up scouting assignments."}</p>
       </div>
-      {myClaim && !myClaim.substituteToken && <details className="rounded-xl border bg-card p-4">
-        <summary className="cursor-pointer text-sm font-medium">Need a break? Arrange a substitute</summary>
-        <div className="mt-3 grid gap-3">
-          <p className="text-xs text-muted-foreground">Stay assigned until your substitute accepts and you confirm the handoff. Finish your report first; device-only drafts do not transfer.</p>
-          <label className="grid gap-1 text-sm">Substitute scout
-            <select className="min-h-11 rounded-lg border bg-background px-3" value={substituteId} onChange={event => setSubstituteId(event.target.value)}>
-              <option value="">Choose a scout</option>
-              {substitutes?.map(scout => <option key={scout._id} value={scout._id}>{scout.name}</option>)}
-            </select>
-          </label>
-          <Button disabled={!substituteId || requestingSub || scoutingClosed} onClick={async () => {
-            setRequestingSub(true)
-            try { await requestSubstitute({ claimId: myClaim._id, substituteId: substituteId as Id<"members"> }); toast.success("Substitute requested. Keep scouting until both confirmations are complete.") }
-            catch (error) { toast.error(error instanceof ConvexError ? String(error.data) : "Could not request substitute") }
-            finally { setRequestingSub(false) }
-          }}>Request substitute</Button>
-        </div>
-      </details>}
       <FormSection title="Autonomous">
         {officialResult?.wonAuto !== undefined ? <p className="text-sm font-medium">{officialSource}: {officialResult.tiedAuto ? "Auto fuel tied" : officialResult.wonAuto ? "Won auto" : "Lost auto"} · {officialResult.autoAllianceFuel}–{officialResult.opponentAutoFuel} fuel</p> : <>
         <Button type="button" variant={form.wonAuto ? "default" : "outline"} aria-pressed={form.wonAuto}

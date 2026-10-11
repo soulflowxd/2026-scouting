@@ -6,47 +6,6 @@ import schema from "./schema"
 
 const modules = import.meta.glob("./**/*.ts")
 
-test("substitution requires both scouts and transfers the claim atomically", async () => {
-  const { t, eventId } = await seedEvent()
-  const owner = await approvedScout(t, "owner@example.com", "handoff-owner")
-  const substitute = await approvedScout(t, "sub@example.com", "handoff-sub")
-  const outsider = await approvedScout(t, "outside@example.com", "handoff-outsider")
-  const candidates = await owner.query(api.matchScouting.availableSubstitutes, {})
-  const subId = candidates.find(member => member.name === "sub")!._id
-  const claimId = await owner.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 1 })
-  await expect(outsider.mutation(api.matchScouting.requestSubstitute, { claimId, substituteId: subId })).rejects.toThrow("assigned scout")
-  await owner.mutation(api.matchScouting.requestSubstitute, { claimId, substituteId: subId })
-  const request = (await substitute.query(api.matchScouting.myHandoffs, {}))[0]
-  const requestedAt = request.breakRequestedAt!
-  await expect(owner.mutation(api.matchScouting.releaseClaim, { claimId })).rejects.toThrow("handoff")
-  await expect(owner.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "confirm" })).rejects.toThrow("accept before")
-  await expect(owner.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "accept" })).rejects.toThrow("own account")
-  await expect(outsider.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "accept" })).rejects.toThrow("these two scouts")
-  const busyClaim = await substitute.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 2 })
-  await expect(substitute.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "accept" })).rejects.toThrow("already has a robot")
-  await substitute.mutation(api.matchScouting.releaseClaim, { claimId: busyClaim })
-  await substitute.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "accept" })
-  expect((await owner.query(api.matchScouting.claimsForMatch, { eventId, matchNumber: 1 })).find(claim => claim._id === claimId)?.scoutToken).toBe("handoff-owner")
-  await owner.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "confirm" })
-  const transferred = (await owner.query(api.matchScouting.claimsForMatch, { eventId, matchNumber: 1 })).find(claim => claim._id === claimId)
-  expect(transferred).toMatchObject({ status: "active", scoutToken: "handoff-sub", handoffFromToken: "handoff-owner" })
-  expect(await substitute.query(api.matchScouting.myHandoffs, {})).toEqual([])
-  await expect(owner.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt, action: "confirm" })).rejects.toThrow("no longer active")
-})
-
-test("declining a substitution keeps the original assignment", async () => {
-  const { t, eventId } = await seedEvent()
-  const owner = await approvedScout(t, "owner@example.com", "handoff-owner")
-  const substitute = await approvedScout(t, "sub@example.com", "handoff-sub")
-  const subId = (await owner.query(api.matchScouting.availableSubstitutes, {})).find(member => member.name === "sub")!._id
-  const claimId = await owner.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 1 })
-  await owner.mutation(api.matchScouting.requestSubstitute, { claimId, substituteId: subId })
-  const request = (await substitute.query(api.matchScouting.myHandoffs, {}))[0]
-  await substitute.mutation(api.matchScouting.confirmSubstitute, { claimId, requestedAt: request.breakRequestedAt!, action: "cancel" })
-  expect(await owner.query(api.matchScouting.myHandoffs, {})).toEqual([])
-  expect((await owner.query(api.matchScouting.claimsForMatch, { eventId, matchNumber: 1 }))[0]).toMatchObject({ scoutToken: "handoff-owner", status: "active" })
-})
-
 function setAdminEnv() {
   vi.stubEnv("ADMIN_EMAILS", "admin@example.com")
   vi.stubEnv("TBA_API_KEY", "test")
@@ -67,7 +26,7 @@ async function approvedScout(
   tokenIdentifier: string,
 ) {
   await t.run(async (ctx) => {
-    await ctx.db.insert("members", {
+    const memberId = await ctx.db.insert("members", {
       tokenIdentifier,
       email,
       name: email.split("@")[0],
@@ -77,6 +36,11 @@ async function approvedScout(
       approvedAt: 1,
       lastSeenAt: 1,
     })
+    for (const event of await ctx.db.query("events").take(10)) {
+      await ctx.db.patch(event._id, { scoutAssignmentsEnabled: true, scoutAssignmentMode: "manual" })
+      const existing = await ctx.db.query("scoutDriverStationAssignments").withIndex("by_eventId_and_station", q => q.eq("eventId", event._id).eq("station", "Red1")).unique()
+      if (!existing) await ctx.db.insert("scoutDriverStationAssignments", { eventId: event._id, station: "Red1", memberId })
+    }
   })
   return t.withIdentity(user(email, tokenIdentifier))
 }
@@ -142,8 +106,8 @@ describe("scouting backend", () => {
     const detail = await scout.query(api.teams.detail, { eventId, teamNumber: 1 })
     expect(detail?.matchReports[0].autoPath).toEqual(autoPath)
     // A stationary robot is recorded honestly with its starting position.
-    await scout.mutation(api.matchScouting.releaseClaim, { claimId: (await scout.query(api.matchScouting.claimsForMatch, { eventId, matchNumber: 1 }))[0]._id })
-    await scout.mutation(api.matchScouting.saveReport, { ...report, teamNumber: 2, autoPath: [[{ x: 100, y: 200 }]] })
+    await t.run(ctx => ctx.db.insert("matches", { eventId, matchNumber: 2, tbaMatchKey: "2026nvlv_qm2", redTeams: [1], blueTeams: [2] }))
+    await scout.mutation(api.matchScouting.saveReport, { ...report, matchNumber: 2, autoPath: [[{ x: 100, y: 200 }]] })
   })
 
   test("notifications are empty when signed out and private to their recipient", async () => {
@@ -277,44 +241,16 @@ describe("scouting backend", () => {
     expect((await scout.query(api.members.me, {})).role).toBe("scout")
   })
 
-  test("claim lock prevents duplicate robot and duplicate scout claims", async () => {
+  test("manual claims are retired and do not create claim records", async () => {
     const { t, eventId } = await seedEvent()
-    const scoutA = await approvedScout(t, "a@example.com", "scout-a")
-    const scoutB = await approvedScout(t, "b@example.com", "scout-b")
-
-    await scoutA.mutation(api.matchScouting.claimRobot, {
-      eventId,
-      matchNumber: 1,
-      teamNumber: 1,
-    })
-    await expect(
-      scoutB.mutation(api.matchScouting.claimRobot, {
-        eventId,
-        matchNumber: 1,
-        teamNumber: 1,
-      }),
-    ).rejects.toThrow("Robot already claimed")
-    await expect(
-      scoutA.mutation(api.matchScouting.claimRobot, {
-        eventId,
-        matchNumber: 1,
-        teamNumber: 2,
-      }),
-    ).rejects.toThrow("Scout already claimed")
-    const claims = await scoutA.query(api.matchScouting.claimsForMatch, { eventId, matchNumber: 1 })
-    await expect(scoutB.mutation(api.matchScouting.releaseClaim, { claimId: claims[0]._id })).rejects.toThrow("Only the scout")
-    await scoutA.mutation(api.matchScouting.releaseClaim, { claimId: claims[0]._id })
-    await scoutA.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 2 })
+    const scout = await approvedScout(t, "a@example.com", "scout-a")
+    await expect(scout.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 1 })).rejects.toThrow("removed")
+    expect(await t.run(ctx => ctx.db.query("matchRobotClaims").take(10))).toEqual([])
   })
 
   test("match report rejects illegal auto climb", async () => {
     const { t, eventId } = await seedEvent()
     const scout = await approvedScout(t, "a@example.com", "scout-a")
-    await scout.mutation(api.matchScouting.claimRobot, {
-      eventId,
-      matchNumber: 1,
-      teamNumber: 1,
-    })
     await expect(
       scout.mutation(api.matchScouting.saveReport, {
         eventId,
@@ -354,12 +290,9 @@ describe("scouting backend", () => {
         status: "approved",
       })
     }
-    await scoutA.mutation(api.matchScouting.claimRobot, {
-      eventId,
-      matchNumber: 1,
-      teamNumber: 1,
-    })
 
+    await admin.mutation(api.scoutAssignments.setMode, { eventId, mode: "manual" })
+    await admin.mutation(api.scoutAssignments.assignStation, { eventId, station: "Red1", memberId: initialMembers.find(member => member.tokenIdentifier === "scout-a")!._id })
     const report = {
       eventId,
       matchNumber: 1,

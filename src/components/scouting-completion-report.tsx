@@ -40,9 +40,12 @@ export function ScoutingCompletionReport({ eventId }: { eventId: Id<"events"> })
     ...(gaps.length ? ["", "Unassigned coverage gaps (no responsible scout):", ...gaps.map(describe)] : []),
   ].join("\n") : ""
 
-  return <section className="grid min-w-0 gap-4 rounded-xl border bg-card p-4" aria-label="Scouting completion report">
+  return <section className="min-w-0 rounded-xl border bg-card p-4" aria-label="Scouting completion report">
+    <details>
+      <summary className="min-h-11 cursor-pointer content-center font-semibold">Missing scouting reports{data ? ` (${data.missing.length})` : ""}</summary>
+      <div className="grid min-w-0 gap-4 pt-3">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="max-w-prose"><h2 className="font-semibold">Missing scouting reports</h2>
+      <div className="max-w-prose">
         <p className="mt-1 text-sm text-muted-foreground">Filter by report type and copy the full list. Finished matches update as results and reports arrive; late submissions disappear automatically.</p>
       </div>
       <Button size="lg" variant="outline" disabled={!data || copying || (!missing.length && !gaps.length)} onClick={async () => {
@@ -108,5 +111,7 @@ export function ScoutingCompletionReport({ eventId }: { eventId: Id<"events"> })
         </div>
       </details>
     </>}
+      </div>
+    </details>
   </section>
 }

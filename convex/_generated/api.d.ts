@@ -47,6 +47,7 @@ import type * as pit from "../pit.js";
 import type * as push from "../push.js";
 import type * as pushSubscriptions from "../pushSubscriptions.js";
 import type * as scoutAssignments from "../scoutAssignments.js";
+import type * as scoutHandoffs from "../scoutHandoffs.js";
 import type * as scoutingCleanup from "../scoutingCleanup.js";
 import type * as tbaMatches from "../tbaMatches.js";
 import type * as teams from "../teams.js";
@@ -98,6 +99,7 @@ declare const fullApi: ApiFromModules<{
   push: typeof push;
   pushSubscriptions: typeof pushSubscriptions;
   scoutAssignments: typeof scoutAssignments;
+  scoutHandoffs: typeof scoutHandoffs;
   scoutingCleanup: typeof scoutingCleanup;
   tbaMatches: typeof tbaMatches;
   teams: typeof teams;

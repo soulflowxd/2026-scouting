@@ -61,6 +61,7 @@ export default defineSchema({
     matchVideoFolderUrl: v.optional(v.string()),
     matchVideoPrefix: v.optional(v.string()),
     scoutAssignmentsEnabled: v.optional(v.boolean()),
+    scoutAssignmentMode: v.optional(v.union(v.literal("automatic"), v.literal("manual"))),
     scoutAssignmentSeed: v.optional(v.number()),
     scoutingEnabled: v.optional(v.boolean()),
     eventKey: v.string(),
@@ -105,6 +106,8 @@ export default defineSchema({
     videoUrl: v.optional(v.string()),
     completionReviewAt: v.optional(v.number()),
     completionAssignments: v.optional(v.array(v.object({ teamNumber: v.number(), scoutToken: v.string(), scoutName: v.string() }))),
+    assignmentSlots: v.optional(v.array(v.object({ teamNumber: v.number(), memberId: v.id("members"), scoutToken: v.string(), scoutName: v.string() }))),
+    assignmentFrozenAt: v.optional(v.number()),
     tbaResult: v.optional(tbaResultValidator),
     officialResultSource: v.optional(v.union(v.literal("first"), v.literal("tba"))),
     tbaCheckedAt: v.optional(v.number()),
@@ -244,10 +247,26 @@ export default defineSchema({
     eventId: v.id("events"), memberId: v.id("members"),
     included: v.optional(v.boolean()),
   }).index("by_eventId_and_memberId", ["eventId", "memberId"]),
+  scoutDriverStationAssignments: defineTable({
+    eventId: v.id("events"), station: v.union(v.literal("Red1"), v.literal("Red2"), v.literal("Red3"), v.literal("Blue1"), v.literal("Blue2"), v.literal("Blue3")), memberId: v.id("members"),
+  }).index("by_eventId_and_station", ["eventId", "station"])
+    .index("by_eventId_and_memberId", ["eventId", "memberId"]),
   scoutTeamAssignments: defineTable({
     eventId: v.id("events"), teamNumber: v.number(), memberId: v.id("members"),
   }).index("by_eventId_and_teamNumber", ["eventId", "teamNumber"])
     .index("by_eventId_and_memberId", ["eventId", "memberId"]),
+  scoutAssignmentHandoffs: defineTable({
+    eventId: v.id("events"), fromMemberId: v.id("members"), toMemberId: v.id("members"),
+    fromToken: v.string(), toToken: v.string(), fromName: v.string(), toName: v.string(),
+    fromMatchNumber: v.number(), teamNumbers: v.array(v.number()),
+    driverStations: v.array(v.string()),
+    matchSlots: v.array(v.object({ matchNumber: v.number(), teamNumber: v.number() })),
+    status: v.union(v.literal("requested"), v.literal("accepted"), v.literal("confirmed"), v.literal("cancelled")),
+    requestedAt: v.number(), acceptedAt: v.optional(v.number()), confirmedAt: v.optional(v.number()), cancelledAt: v.optional(v.number()),
+  }).index("by_eventId", ["eventId"])
+    .index("by_eventId_and_status", ["eventId", "status"])
+    .index("by_fromToken_and_status", ["fromToken", "status"]).index("by_toToken_and_status", ["toToken", "status"]),
+  // Retained as legacy audit data; manual claims no longer control scouting.
   matchRobotClaims: defineTable({
     eventId: v.id("events"),
     matchNumber: v.number(),

@@ -89,7 +89,7 @@ test("all scouts and admins are locked out of repeat submissions until every exi
   for (const tokenIdentifier of ["admin", "super", "scout"]) {
     const actor = t.withIdentity({ tokenIdentifier })
     await expect(actor.mutation(api.matchScouting.saveReport, match)).rejects.toThrow("already submitted")
-    await expect(actor.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 127 })).rejects.toThrow("already submitted")
+    await expect(actor.mutation(api.matchScouting.claimRobot, { eventId, matchNumber: 1, teamNumber: 127 })).rejects.toThrow("removed")
     if (tokenIdentifier !== "scout") await expect(actor.mutation(api.pit.save, pit)).rejects.toThrow("already submitted")
   }
   expect(await admin.query(api.matchScouting.reportSubmitted, { eventId, matchNumber: 1, teamNumber: 127 })).toBe(true)
