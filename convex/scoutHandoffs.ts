@@ -6,7 +6,7 @@ import { requireApprovedUserFromDb } from "./lib/authz"
 import { requireScoutingOpen } from "./lib/scoutingAccess"
 import { assignmentContext, assignmentSlots, matchHasStarted, matchPlan } from "./lib/scoutMatchAssignments"
 
-async function scope(ctx: QueryCtx | MutationCtx, eventId: Id<"events">, memberId: Id<"members">, fromMatchNumber?: number) {
+export async function scope(ctx: QueryCtx | MutationCtx, eventId: Id<"events">, memberId: Id<"members">, fromMatchNumber?: number) {
   const context = await assignmentContext(ctx, eventId)
   if (!context.event) throw new ConvexError("Event not found")
   const matches = (await ctx.db.query("matches").withIndex("by_eventId", q => q.eq("eventId", eventId)).take(500)).sort((a, b) => a.matchNumber - b.matchNumber)

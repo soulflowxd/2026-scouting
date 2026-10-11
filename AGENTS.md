@@ -51,6 +51,13 @@ redirects here; keep project guidance here rather than duplicating it.
 
 ## Scouting Behavior
 
+- Scouts request leave for pit shifts from Matches. Pending leave never changes
+  assignments. Only approved admins can approve or decline. Approval releases
+  future assignments atomically and leaves visible coverage gaps until an admin
+  assigns a replacement. Preserve earlier responsibility and retain the
+  requester, reason, approving admin, boundary, and released
+  slots as event-scoped audit history. Pending requests appear in admin alerts.
+
 - Match cycle counts allow increments of 0.5, including auto, teleop shifts,
   and endgame. Preserve half cycles in submissions and report statistics;
   other integer counters and ratings retain their existing increments.

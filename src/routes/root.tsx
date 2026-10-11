@@ -104,10 +104,11 @@ export function RootRoute() {
   const removeDevice = useMutation(api.pushSubscriptions.remove)
   const syncBreakdownAlerts = useMutation(api.notifications.syncBreakdownAlerts)
   const { activeEvent } = useActiveEvent()
+  const leaveRequests = useQuery(api.scoutLeave.pending, me?.role === "admin" && activeEvent ? { eventId: activeEvent._id } : "skip")
   const seenNotificationIds = useRef<Set<string> | null>(null)
   const unreadNotifications = notifications ?? []
   const approvalNoticePending = me?.member?.approvalNoticePending === true
-  const notificationCount = unreadNotifications.length + approvals.length + (approvalNoticePending ? 1 : 0)
+  const notificationCount = unreadNotifications.length + approvals.length + (leaveRequests?.length ?? 0) + (approvalNoticePending ? 1 : 0)
 
   useEffect(() => {
     const notificationId = searchParams.get("breakdown")
@@ -219,13 +220,17 @@ export function RootRoute() {
                       <span className="block text-xs text-muted-foreground">{formatNotificationTime(approval.requestedAt)}</span>
                     </NavLink>
                   ))}
+                  {leaveRequests?.map(request => <NavLink key={request._id} to="/admin" className="block rounded-md px-2.5 py-2 text-sm hover:bg-muted">
+                    <span className="block font-medium">Scout leave approval needed</span>
+                    <span className="block break-words">{request.scoutName} · {request.reason}</span>
+                  </NavLink>)}
                   {notificationError && <p role="alert" className="px-3 py-2 text-sm text-muted-foreground">Notifications are temporarily unavailable.</p>}
                   {!notificationError && notifications === undefined && (
                     <p className="px-2 py-6 text-center text-sm text-muted-foreground">
                       Loading alerts…
                     </p>
                   )}
-                  {notifications?.length === 0 && approvals.length === 0 && !approvalNoticePending && (
+                  {notifications?.length === 0 && approvals.length === 0 && !leaveRequests?.length && !approvalNoticePending && (
                     <p className="px-2 py-6 text-center text-sm text-muted-foreground">
                       No scout alerts yet.
                     </p>

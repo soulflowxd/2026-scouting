@@ -256,6 +256,16 @@ export default defineSchema({
     eventId: v.id("events"), teamNumber: v.number(), memberId: v.id("members"),
   }).index("by_eventId_and_teamNumber", ["eventId", "teamNumber"])
     .index("by_eventId_and_memberId", ["eventId", "memberId"]),
+  scoutLeaveRequests: defineTable({
+    eventId: v.id("events"), memberId: v.id("members"), scoutName: v.string(),
+    reason: v.string(), requestedAt: v.number(),
+    status: v.union(v.literal("pending"), v.literal("approved"), v.literal("rejected"), v.literal("cancelled")),
+    reviewedAt: v.optional(v.number()), reviewedBy: v.optional(v.string()),
+    fromMatchNumber: v.optional(v.number()),
+    driverStations: v.optional(v.array(v.string())), teamNumbers: v.optional(v.array(v.number())),
+    matchSlots: v.optional(v.array(v.object({ matchNumber: v.number(), teamNumber: v.number() }))),
+  }).index("by_eventId_and_memberId", ["eventId", "memberId"])
+    .index("by_eventId_and_status", ["eventId", "status"]),
   scoutAssignmentHandoffs: defineTable({
     eventId: v.id("events"), fromMemberId: v.id("members"), toMemberId: v.id("members"),
     fromToken: v.string(), toToken: v.string(), fromName: v.string(), toName: v.string(),

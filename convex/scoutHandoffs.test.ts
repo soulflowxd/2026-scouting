@@ -28,6 +28,54 @@ async function fixture() {
   return { t, ...ids, admin: t.withIdentity({ tokenIdentifier: "admin" }), alice: t.withIdentity({ tokenIdentifier: "alice" }), bob: t.withIdentity({ tokenIdentifier: "bob" }), casey: t.withIdentity({ tokenIdentifier: "casey" }) }
 }
 
+test("leave waits for admin approval and preserves earlier responsibility and leaves future slots unassigned", async () => {
+  const { t, admin, alice, bob, casey, eventId } = await fixture()
+  const requestId = await alice.mutation(api.scoutLeave.request, { eventId, reason: " Pit shift " })
+  expect((await alice.query(api.scoutAssignments.mine, { eventId })).matchAssignments).toHaveLength(3)
+  expect((await alice.query(api.scoutLeave.mine, { eventId }))[0]).toMatchObject({ status: "pending", reason: "Pit shift" })
+  await expect(alice.mutation(api.scoutLeave.request, { eventId, reason: "Pit shift" })).rejects.toThrow("already have")
+  await expect(alice.mutation(api.scoutLeave.review, { requestId, approve: true })).rejects.toThrow("Unauthorized")
+  await expect(bob.mutation(api.scoutLeave.cancel, { requestId })).rejects.toThrow("Only your")
+  // A match finishes while the request is awaiting approval.
+  await admin.mutation(api.scoutAssignments.openCompletionReview, { eventId, matchNumber: 1 })
+  await admin.mutation(api.scoutLeave.review, { requestId, approve: true })
+  expect((await alice.query(api.scoutAssignments.mine, { eventId })).matchAssignments.map(slot => slot.matchNumber)).toEqual([1])
+  expect((await casey.query(api.scoutAssignments.mine, { eventId })).matchAssignments).toHaveLength(0)
+  const coverage = await admin.query(api.scoutAssignments.adminList, { eventId })
+  expect(coverage.stations.some(slot => slot.station === "Red1")).toBe(false)
+  expect(coverage.matchAssignments.find(match => match.matchNumber === 2)?.slots.some(slot => slot.teamNumber === 2)).toBe(false)
+  expect(await t.run(ctx => ctx.db.get(requestId))).toMatchObject({ status: "approved", reviewedBy: "Admin", fromMatchNumber: 2, driverStations: ["Red1"], matchSlots: [{ matchNumber: 2, teamNumber: 2 }, { matchNumber: 3, teamNumber: 3 }] })
+  await expect(admin.mutation(api.scoutLeave.review, { requestId, approve: true })).rejects.toThrow("no longer pending")
+})
+
+test("automatic leave preserves coverage gaps instead of silently giving released robots to other scouts", async () => {
+  const { t, admin, alice, eventId, aliceId } = await fixture()
+  await t.run(ctx => ctx.db.patch(eventId, { scoutAssignmentMode: "automatic" }))
+  const before = await admin.query(api.scoutAssignments.adminList, { eventId })
+  const requestId = await alice.mutation(api.scoutLeave.request, { eventId, reason: "Pit shift" })
+  await admin.mutation(api.scoutLeave.review, { requestId, approve: true })
+  const after = await admin.query(api.scoutAssignments.adminList, { eventId })
+  for (const match of before.matchAssignments) {
+    const next = after.matchAssignments.find(row => row.matchNumber === match.matchNumber)!
+    expect(next.slots).toEqual(match.slots.filter(slot => slot.scout !== aliceId))
+    expect(next.uncovered).toBe(match.uncovered + match.slots.filter(slot => slot.scout === aliceId).length)
+  }
+})
+
+test("declining or cancelling leave retains assignments and an active handoff prevents approval", async () => {
+  const { admin, alice, casey, eventId, caseyId } = await fixture()
+  const declined = await alice.mutation(api.scoutLeave.request, { eventId, reason: "Pit shift" })
+  await admin.mutation(api.scoutLeave.review, { requestId: declined, approve: false })
+  expect((await alice.query(api.scoutAssignments.mine, { eventId })).matchAssignments).toHaveLength(3)
+  const cancelled = await alice.mutation(api.scoutLeave.request, { eventId, reason: "Pit shift" })
+  await alice.mutation(api.scoutLeave.cancel, { requestId: cancelled })
+  expect((await alice.query(api.scoutLeave.mine, { eventId }))[0].status).toBe("cancelled")
+  const requestId = await alice.mutation(api.scoutLeave.request, { eventId, reason: "Pit shift" })
+  await alice.mutation(api.scoutHandoffs.request, { eventId, substituteId: caseyId, fromMatchNumber: 1 })
+  await expect(admin.mutation(api.scoutLeave.review, { requestId, approve: true })).rejects.toThrow("pending handoff")
+  expect((await casey.query(api.scoutAssignments.mine, { eventId })).matchAssignments).toHaveLength(0)
+})
+
 test("manual stations follow each match's teams, require no claims and do not assign spare scouts", async () => {
   const { t, admin, alice, casey, eventId, aliceId, bobId } = await fixture()
   expect((await alice.query(api.scoutAssignments.mine, { eventId })).matchAssignments.map(slot => [slot.matchNumber, slot.teamNumber])).toEqual([[1, 1], [2, 2], [3, 3]])

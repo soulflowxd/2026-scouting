@@ -5,10 +5,12 @@ import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
 import { Button } from "@/components/ui/button"
+import { ScoutLeaveRequest } from "@/components/scout-leave"
 
 export function AssignmentHandoff({ eventId, closed }: { eventId: Id<"events">; closed: boolean }) {
   const options = useQuery(api.scoutHandoffs.options, { eventId })
   const history = useQuery(api.scoutHandoffs.history, { eventId })
+  const leaveHistory = useQuery(api.scoutLeave.history, { eventId })
   const pending = useQuery(api.scoutHandoffs.mine, {})?.some(row => row.eventId === eventId) ?? false
   const request = useMutation(api.scoutHandoffs.request)
   const [substituteId, setSubstituteId] = useState("")
@@ -18,6 +20,7 @@ export function AssignmentHandoff({ eventId, closed }: { eventId: Id<"events">; 
   const fromMatchNumber = options?.matches.includes(Number(start)) ? Number(start) : options?.fromMatchNumber
   const hasAssignments = !!options && (options.teamLabels.length > 0 || options.matchCount > 0 || options.driverStations.length > 0)
   return <div className="grid min-w-0 gap-3 border-t pt-3">
+    <ScoutLeaveRequest eventId={eventId} closed={closed} hasAssignments={hasAssignments} />
     {!!options && <details open={!hasAssignments}>
       <summary className="min-h-11 cursor-pointer content-center text-sm font-medium">{hasAssignments ? "Need a break? Hand off assignments" : "Take over for another scout"}</summary>
       <form className="grid gap-3 pt-3" onSubmit={async event => {
@@ -62,6 +65,14 @@ export function AssignmentHandoff({ eventId, closed }: { eventId: Id<"events">; 
           <span className="text-xs text-muted-foreground">Earlier matches remain with {row.fromName}; transferred matches belong to {row.toName}.</span>
         </li>)}
       </ul> : <p className="py-2 text-sm text-muted-foreground">No confirmed handoffs for this event.</p>}
+    </details>
+    <details>
+      <summary className="min-h-11 cursor-pointer content-center text-sm font-medium">Approved leave history{leaveHistory ? ` (${leaveHistory.length})` : ""}</summary>
+      {!leaveHistory ? <p className="py-2 text-sm text-muted-foreground">Loading history…</p> : !leaveHistory.length ? <p className="py-2 text-sm text-muted-foreground">No approved leave for this event.</p> : <ul className="grid divide-y">{leaveHistory.map(row => <li key={row._id} className="grid gap-1 py-3 text-sm">
+        <span className="font-medium">{row.scoutName} left · From QM{row.fromMatchNumber}</span>
+        <span className="break-words text-muted-foreground">{row.reason} · Approved by {row.reviewedBy} · {row.matchSlots?.length ?? 0} match assignments · {new Date(row.reviewedAt!).toLocaleString()}</span>
+        <span className="text-xs text-muted-foreground">Earlier matches remain with {row.scoutName}; future assignments were released for an admin to fill.</span>
+      </li>)}</ul>}
     </details>
   </div>
 }
