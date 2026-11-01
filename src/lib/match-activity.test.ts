@@ -8,7 +8,8 @@ describe("match activity timing", () => {
     expect(matchPhase(22_999)).toBe("3-second gap")
     expect(matchPhase(23_000)).toBe("Teleop")
     expect(matchPhase(133_000)).toBe("Endgame")
-    expect(matchPhase(163_000)).toBe("Match complete")
+    expect(matchPhase(169_999)).toBe("Endgame")
+    expect(matchPhase(170_000)).toBe("Match complete")
   })
 
   it("stops an auto action at the gap rather than carrying it into teleop", () => {

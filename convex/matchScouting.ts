@@ -214,7 +214,7 @@ export const saveReport = mutation({
     if (args.autoPath && (args.autoPath.length > 200 || args.autoPath.reduce((count, path) => count + path.length, 0) > 2000 || args.autoPath.some(path => !path.length || path.some(({ x, y }) => !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1000 || y < 0 || y > 500)))) {
       throw new ConvexError("Observed auto path is invalid or too large")
     }
-    if (args.activityTimeline && (args.activityTimeline.length > 300 || args.activityTimeline.some((item, index) => !activityAllowlist.has(item.action) || !Number.isInteger(item.startMs) || !Number.isInteger(item.endMs) || item.startMs < 0 || item.endMs < item.startMs || item.endMs > 1_200_000 || (activityOnly && (item.endMs > 163_000 || (item.startMs < 23_000 && item.endMs > 20_000) || (item.startMs >= 20_000 && item.startMs < 23_000))) || (index > 0 && item.startMs < args.activityTimeline![index - 1].endMs)))) {
+    if (args.activityTimeline && (args.activityTimeline.length > 300 || args.activityTimeline.some((item, index) => !activityAllowlist.has(item.action) || !Number.isInteger(item.startMs) || !Number.isInteger(item.endMs) || item.startMs < 0 || item.endMs < item.startMs || item.endMs > 1_200_000 || (activityOnly && (item.endMs > 170_000 || (item.startMs < 23_000 && item.endMs > 20_000) || (item.startMs >= 20_000 && item.startMs < 23_000))) || (index > 0 && item.startMs < args.activityTimeline![index - 1].endMs)))) {
       throw new ConvexError("Match activity timeline is invalid or too large")
     }
     if (match) await ctx.scheduler.runAfter(0, internal.tbaMatches.refreshAfterReport, { eventId: args.eventId, matchNumber: args.matchNumber, attempt: 0 })

@@ -6,7 +6,7 @@ export const AUTO_END_MS = 20_000
 export const TELEOP_START_MS = 23_000
 export const TRANSITION_END_MS = 33_000
 export const ENDGAME_START_MS = 133_000
-export const MATCH_END_MS = 163_000
+export const MATCH_END_MS = 170_000
 
 export function matchShift(elapsedMs: number, firstInactive: AllianceColor | null) {
   if (elapsedMs < AUTO_END_MS) return { label: "Auto", endsAtMs: AUTO_END_MS, inactiveHub: null }

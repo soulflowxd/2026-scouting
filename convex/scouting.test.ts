@@ -78,8 +78,10 @@ describe("scouting backend", () => {
     const scout = await approvedScout(t, "timed@example.com", "timed-scout")
     await expect(scout.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: 1,
       activityTimeline: [{ action: "Idle", startMs: 19_000, endMs: 23_000 }] })).rejects.toThrow("timeline is invalid")
+    await expect(scout.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: 1,
+      activityTimeline: [{ action: "Idle", startMs: 169_000, endMs: 170_001 }] })).rejects.toThrow("timeline is invalid")
     await scout.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: 1,
-      activityTimeline: [{ action: "Idle", startMs: 0, endMs: 20_000 }, { action: "Stealing", startMs: 23_000, endMs: 25_000 }] })
+      activityTimeline: [{ action: "Idle", startMs: 0, endMs: 20_000 }, { action: "Stealing", startMs: 169_000, endMs: 170_000 }] })
     const detail = await scout.query(api.teams.detail, { eventId, teamNumber: 1 })
     expect(detail?.matchReports[0].activityTimeline).toHaveLength(2)
     expect(detail?.matchReports[0].autoCycles).toBeUndefined()

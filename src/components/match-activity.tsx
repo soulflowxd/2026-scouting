@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { createPortal, flushSync } from "react-dom"
-import { ArrowLeft, ArrowRight, CircleDot, HandGrab, Mountain, PackageOpen, Pause, RotateCcw, Send, Shield, Square } from "lucide-react"
+import { ArrowLeft, ArrowRight, CircleDot, HandGrab, Mountain, PackageOpen, Pause, RotateCcw, Send, Shield, Square, TriangleAlert } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { matchActions, matchShift, MATCH_END_MS, AUTO_END_MS, TELEOP_START_MS, ENDGAME_START_MS, type AllianceColor, type MatchActivitySegment } from "@/lib/match-activity"
 
@@ -41,6 +41,8 @@ type Props = {
   matchNumber: number; teamNumber: number; alliance: AllianceColor
   startedAt: number; endedAt: number; timeline: MatchActivitySegment[]
   firstInactiveHub: AllianceColor | null
+  brokeDown: boolean; breakdownNotes: string
+  onBrokeDownChange: (value: boolean) => void; onBreakdownNotesChange: (value: string) => void
   blockedMessage?: string; saving: boolean
   navigationBlocked: boolean
   onStay: () => void; onSaveAndLeave: () => void; onDiscardAndLeave: () => void
@@ -50,11 +52,12 @@ type Props = {
   onSubmit: () => void; onExit: () => void
 }
 
-export function MatchActivity({ matchNumber, teamNumber, alliance, startedAt, endedAt, timeline, firstInactiveHub, blockedMessage, saving, navigationBlocked, onStay, onSaveAndLeave, onDiscardAndLeave, onStart, onHoldStart, onHoldEnd, onStop, onRestart, onFirstInactiveHubChange, onSubmit, onExit }: Props) {
+export function MatchActivity({ matchNumber, teamNumber, alliance, startedAt, endedAt, timeline, firstInactiveHub, brokeDown, breakdownNotes, onBrokeDownChange, onBreakdownNotesChange, blockedMessage, saving, navigationBlocked, onStay, onSaveAndLeave, onDiscardAndLeave, onStart, onHoldStart, onHoldEnd, onStop, onRestart, onFirstInactiveHubChange, onSubmit, onExit }: Props) {
   const [now, setNow] = useState(0)
   const [heldAction, setHeldAction] = useState<string | null>(null)
   const [confirmRestart, setConfirmRestart] = useState(false)
   const heldRef = useRef<string | null>(null)
+  const pointerRef = useRef<number | null>(null)
   const exitRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -98,6 +101,15 @@ export function MatchActivity({ matchNumber, teamNumber, alliance, startedAt, en
     setHeldAction(action)
     onHoldStart(action)
   }
+  function switchHold(action: string) {
+    if (tileDisabled || heldRef.current === action) return
+    stopHold()
+    startHold(action)
+  }
+  function actionAt(x: number, y: number) {
+    const element = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-match-action]")
+    return element?.dataset.matchAction ?? null
+  }
   useEffect(() => {
     if ((inGap || elapsedMs >= MATCH_END_MS || endedAt) && heldRef.current !== null) stopHold()
   }, [inGap, elapsedMs, endedAt, stopHold])
@@ -134,23 +146,26 @@ export function MatchActivity({ matchNumber, teamNumber, alliance, startedAt, en
               {(["red", "blue"] as const).map(hub => <button key={hub} type="button" aria-pressed={firstInactiveHub === hub} disabled={saving} onClick={() => onFirstInactiveHubChange(firstInactiveHub === hub ? null : hub)} className={cn("min-h-11 rounded-lg border px-2 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-50", firstInactiveHub === hub ? hub === "red" ? "border-rose-400 bg-rose-500 text-white" : "border-blue-400 bg-blue-500 text-white" : "border-white/20 bg-white/5 text-slate-200")}>{hub === "red" ? "Red" : "Blue"} won / first off</button>)}
             </div>
           </div>}
-          <div className="grid grid-cols-6 gap-2" aria-label="Hold a robot activity">
-            {matchActions.map((action, index) => { const Icon = tileIcons[action]; return <button key={action} type="button" disabled={tileDisabled} aria-pressed={heldAction === action} aria-label={`${action}. Press and hold while the robot is ${action.toLowerCase()}.`} onPointerDown={event => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); startHold(action) }} onPointerUp={stopHold} onPointerCancel={stopHold} onLostPointerCapture={stopHold} onKeyDown={event => { if ((event.key === " " || event.key === "Enter") && !event.repeat) { event.preventDefault(); startHold(action) } }} onKeyUp={event => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); stopHold() } }} onBlur={stopHold} onContextMenu={event => event.preventDefault()} className={cn("flex touch-none select-none flex-col items-center justify-center gap-1 rounded-xl border-2 px-1 text-xs font-bold uppercase tracking-wide transition-[transform,background-color,border-color] active:scale-[.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-40", index === 7 ? "col-span-6 min-h-14" : index < 2 || index >= 5 ? "col-span-3 aspect-[1.85] min-h-20" : "col-span-2 aspect-[1.25] min-h-20", tileStyles[action], heldAction === action && activeTileStyles[action])}><Icon className="size-6" aria-hidden="true" />{action}</button> })}
+          <div className="relative mx-auto aspect-square w-full max-w-[22rem] touch-none select-none rounded-full border border-white/15 bg-white/[.03]" aria-label="Robot activity dial" onPointerDown={event => { if (tileDisabled) return; const action = actionAt(event.clientX, event.clientY); if (!action) return; event.preventDefault(); pointerRef.current = event.pointerId; event.currentTarget.setPointerCapture(event.pointerId); switchHold(action) }} onPointerMove={event => { if (pointerRef.current !== event.pointerId) return; const action = actionAt(event.clientX, event.clientY); if (action) switchHold(action) }} onPointerUp={event => { if (pointerRef.current !== event.pointerId) return; pointerRef.current = null; stopHold() }} onPointerCancel={() => { pointerRef.current = null; stopHold() }} onLostPointerCapture={() => { pointerRef.current = null; stopHold() }}>
+            {matchActions.map((action, index) => { const Icon = tileIcons[action]; const angle = index === 3 ? 0 : (index < 3 ? index : index - 1) * Math.PI * 2 / 7 - Math.PI / 2; const x = index === 3 ? 50 : 50 + 37 * Math.cos(angle); const y = index === 3 ? 50 : 50 + 37 * Math.sin(angle); return <button key={action} type="button" data-match-action={action} disabled={tileDisabled} aria-pressed={heldAction === action} aria-label={`${action}. Hold or drag here while robot is ${action.toLowerCase()}.`} onKeyDown={event => { if ((event.key === " " || event.key === "Enter") && !event.repeat) { event.preventDefault(); switchHold(action) } }} onKeyUp={event => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); stopHold() } }} onBlur={stopHold} onContextMenu={event => event.preventDefault()} style={{ left: `${x}%`, top: `${y}%` }} className={cn("absolute flex size-[24%] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border-2 text-[clamp(9px,2.5vw,12px)] font-bold leading-tight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-40", tileStyles[action], heldAction === action && activeTileStyles[action])}><Icon className="mb-0.5 size-5" aria-hidden="true" />{action}</button> })}
           </div>
-          <p className="text-center text-[11px] text-slate-400">Hold a tile while the action happens. Release to stop.</p>
-        </> : <div className="grid gap-4 rounded-2xl border border-white/10 bg-white/[.04] p-5 text-center">
+          <p className="text-center text-xs text-slate-300">Hold, then drag between actions. Release to stop.</p>        </> : <div className="grid gap-4 rounded-2xl border border-white/10 bg-white/[.04] p-5 text-center">
           <p className="text-lg font-semibold">Run captured</p>
           <p className="text-sm text-slate-300">{timeline.length} activity {timeline.length === 1 ? "segment" : "segments"} recorded for team {teamNumber}.</p>
           <button type="button" disabled={saving || !timeline.length || !!blockedMessage} onClick={onSubmit} className="min-h-14 rounded-xl bg-emerald-500 px-5 font-bold text-[#07130d] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-40">{saving ? "Saving report…" : "Submit activity report"}</button>
         </div>}
+        <div className="grid gap-2 rounded-xl border border-white/10 p-3">
+          <button type="button" aria-pressed={brokeDown} onClick={() => onBrokeDownChange(!brokeDown)} className={cn("flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white", brokeDown ? "border-rose-400 bg-rose-500/20 text-rose-100" : "border-white/20 text-slate-200")}><TriangleAlert className="size-4" aria-hidden="true" /> Robot broke down {brokeDown ? "✓" : ""}</button>
+          {brokeDown && <label className="grid gap-1 text-xs text-slate-300">Optional breakdown report<textarea value={breakdownNotes} onChange={event => onBreakdownNotesChange(event.target.value)} maxLength={4000} rows={2} placeholder="What stopped working? Add what you observed." className="w-full rounded-lg border border-white/20 bg-[#191b23] p-2 text-sm text-white placeholder:text-slate-400 focus-visible:outline-2 focus-visible:outline-white" /></label>}
+        </div>
         <div className="grid gap-2 pt-2">
           <div className="grid gap-1" aria-label="Recorded match activity timeline">
             <div className="flex items-baseline justify-between text-xs"><span><strong className="text-base text-white">{timeline.length}</strong> <span className="text-slate-400">segments</span></span><span className="text-slate-400 tabular-nums">{Math.min(100, Math.round(elapsedMs / MATCH_END_MS * 100))}%</span></div>
-            <div className="relative h-4 overflow-hidden rounded-sm border border-white/15 bg-slate-800" role="img" aria-label={`${timeline.length} activity segments over a 2 minute 43 second match`}>
+            <div className="relative h-4 overflow-hidden rounded-sm border border-white/15 bg-slate-800" role="img" aria-label={`${timeline.length} activity segments over a 2 minute 50 second match`}>
               {visibleTimeline.map((segment, index) => <span key={`${segment.startMs}-${index}`} className="absolute inset-y-0" style={{ left: `${segment.startMs / MATCH_END_MS * 100}%`, width: `${Math.max(0.8, (segment.endMs - segment.startMs) / MATCH_END_MS * 100)}%`, backgroundColor: segmentColors[segment.action as keyof typeof segmentColors] ?? "#94a3b8" }} />)}
               <span className="absolute inset-y-0 w-px bg-white/70" style={{ left: `${Math.min(100, elapsedMs / MATCH_END_MS * 100)}%` }} />
             </div>
-            <div className="flex justify-between text-[10px] tabular-nums text-slate-500"><span>0:00</span><span>0:45</span><span>1:30</span><span>2:43</span></div>
+            <div className="flex justify-between text-[10px] tabular-nums text-slate-500"><span>0:00</span><span>0:45</span><span>1:30</span><span>2:50</span></div>
             {!!timeline.length && <div className="flex gap-1 overflow-x-auto py-1" aria-label="Activity segments">{timeline.slice(-8).map((segment, index) => <span key={`${segment.startMs}-${index}`} className="shrink-0 rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-slate-300"><span style={{ color: segmentColors[segment.action as keyof typeof segmentColors] ?? "#94a3b8" }}>●</span> {segment.action} {timestamp(segment.startMs)}–{timestamp(segment.endMs)}</span>)}</div>}
           </div>
           {confirmRestart ? <div className="grid gap-2 rounded-xl border border-rose-400/40 bg-rose-500/10 p-3" role="group" aria-label="Confirm restart match run"><p className="text-sm text-rose-100">Discard this run and start the timer over?</p><div className="grid grid-cols-2 gap-2"><button type="button" disabled={saving} onClick={() => { stopHold(); onRestart(); setNow(0); setConfirmRestart(false) }} className="min-h-11 rounded-lg bg-rose-500 px-2 text-sm font-bold text-white disabled:opacity-50">Discard & restart</button><button type="button" onClick={() => setConfirmRestart(false)} className="min-h-11 rounded-lg border border-white/20 px-2 text-sm font-medium text-white">Keep run</button></div></div> : <button type="button" disabled={saving} onClick={() => setConfirmRestart(true)} className="mx-auto inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium text-slate-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-50"><RotateCcw className="size-4" aria-hidden="true" /> Restart match run</button>}

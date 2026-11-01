@@ -45,6 +45,8 @@ type MatchFormState = {
   activityStartedAt: number
   activityEndedAt: number
   activityTimeline: MatchActivitySegment[]
+  brokeDown: boolean
+  breakdownNotes: string
   firstInactiveHub: "" | AllianceColor
   teleopNotes: string
   endgameClimb: EndgameClimb
@@ -71,6 +73,8 @@ const emptyMatchForm: MatchFormState = {
   activityStartedAt: 0,
   activityEndedAt: 0,
   activityTimeline: [],
+  brokeDown: false,
+  breakdownNotes: "",
   firstInactiveHub: "",
   teleopNotes: "",
   endgameClimb: "none",
@@ -504,6 +508,18 @@ function MatchForm({
   const blocker = useBlocker(dirty && !saving)
   const allowedByAssignment = !!assignments && (me?.role === "admin" || (assignments.enabled && (assignments.hasSchedule ? assignments.matchAssignments.some(slot => slot.matchNumber === matchNumber && slot.teamNumber === teamNumber) : assignments.teams.some(team => team.teamNumber === teamNumber))))
 
+  useEffect(() => {
+    if (!form.activityStartedAt || form.activityEndedAt) return
+    const remaining = MATCH_END_MS - (Date.now() - form.activityStartedAt)
+    const timer = window.setTimeout(() => setForm(current => {
+      if (!current.activityStartedAt || current.activityEndedAt) return current
+      const at = Date.now() - current.activityStartedAt
+      if (at < MATCH_END_MS) return current
+      return { ...current, activityEndedAt: current.activityStartedAt + MATCH_END_MS, activityTimeline: current.activityTimeline.map((item, index) => index === current.activityTimeline.length - 1 && item.endMs === item.startMs ? { ...item, endMs: endActivityAt(item, MATCH_END_MS) } : item) }
+    }), Math.max(0, remaining))
+    return () => window.clearTimeout(timer)
+  }, [form.activityStartedAt, form.activityEndedAt])
+
   async function onSubmit() {
     if (savingRef.current) return
     if (!form.activityStartedAt || !form.activityEndedAt || !form.activityTimeline.length) return
@@ -511,7 +527,7 @@ function MatchForm({
     setSaving(true)
     try {
       const activityTimeline = form.activityTimeline
-      await queueReport(scoutToken, { kind: "match", args: { eventId, matchNumber, teamNumber, activityTimeline }, photos: [] })
+      await queueReport(scoutToken, { kind: "match", args: { eventId, matchNumber, teamNumber, activityTimeline, tags: form.brokeDown ? ["Broke down"] : [], teleopNotes: form.brokeDown ? form.breakdownNotes.trim() : undefined }, photos: [] })
       toast.success(`QM${matchNumber} report saved on device. Upload pending.`)
       setForm(emptyMatchForm)
       setSavedForm(JSON.stringify(emptyMatchForm))
@@ -535,6 +551,9 @@ function MatchForm({
     matchNumber={matchNumber} teamNumber={teamNumber} alliance={alliance}
     startedAt={form.activityStartedAt} endedAt={form.activityEndedAt}
     timeline={form.activityTimeline} firstInactiveHub={form.firstInactiveHub || null}
+    brokeDown={form.brokeDown} breakdownNotes={form.breakdownNotes}
+    onBrokeDownChange={value => setForm(current => ({ ...current, brokeDown: value, breakdownNotes: value ? current.breakdownNotes : "" }))}
+    onBreakdownNotesChange={value => setForm(current => ({ ...current, breakdownNotes: value }))}
     blockedMessage={blockedMessage} saving={saving}
     navigationBlocked={blocker.state === "blocked"}
     onStay={() => { if (blocker.state === "blocked") blocker.reset() }}
