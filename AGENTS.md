@@ -23,7 +23,9 @@ redirects here; keep project guidance here rather than duplicating it.
   --dev-deployment cloud`. Use its development `VITE_CONVEX_URL` for a Vercel
   preview deployment (`vercel deploy --yes --build-env VITE_CONVEX_URL=<url>`).
   The preview branch of `scripts/deploy.mjs` builds the frontend without
-  deploying Convex production. Do not point a preview at the local Convex URL.
+  deploying Convex production. Set `VITE_CONVEX_URL` in Vercel's Preview
+  environment for any Git branch that builds automatically. Do not point a
+  preview at the local Convex URL.
 - Verify relevant tests and a production build before deploying code changes.
 - Preserve unrelated work in a dirty checkout. Stage only intended files;
   never reset or discard another contributor's changes.
