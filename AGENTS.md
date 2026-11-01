@@ -65,6 +65,9 @@ redirects here; keep project guidance here rather than duplicating it.
   teleop. Count the transition and four alliance shifts, showing the active
   hub from the auto winner or FMS selection after a tie. Show the selected
   robot's alliance and whether its own hub is on or off in the current shift.
+  Keep the live phone UI close to 9483's compact timer, two-wide top action
+  row, three-button middle row, lower action row, and visible segment timeline.
+  Keep actions press-and-hold with release to stop recording.
   Scouts can restart an
   unsubmitted run after confirming its timeline will be discarded. Do not
   collect cycles, ratings, tags, paths, or notes in the match
