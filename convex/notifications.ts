@@ -117,7 +117,7 @@ export const syncBreakdownAlerts = mutation({
       .take(500)
     const breakdowns = new Map<string, { matchNumber: number; teamNumber: number }>()
     for (const report of reports) {
-      if (!report.tags.includes("Broke down")) continue
+      if (!report.tags?.includes("Broke down")) continue
       breakdowns.set(`${report.matchNumber}:${report.teamNumber}`, {
         matchNumber: report.matchNumber,
         teamNumber: report.teamNumber,

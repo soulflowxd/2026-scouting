@@ -22,6 +22,7 @@ const tagAllowlist = new Set([
   "Good at crossing Bump/Trench",
   "Strong climber",
 ])
+const activityAllowlist = new Set(["Scoring", "Passing", "Climbing", "Idle", "Defending", "Traveling", "Intaking"])
 
 export const saveVideoLink = mutation({
   args: { matchId: v.id("matches"), videoUrl: v.string() },
@@ -57,11 +58,11 @@ export const removeReport = mutation({
       .withIndex("by_eventId_and_matchNumber_and_teamNumber_and_status", q => q.eq("eventId", report.eventId).eq("matchNumber", report.matchNumber).eq("teamNumber", report.teamNumber).eq("status", "active"))) {
       await ctx.db.patch(claim._id, { status: "released", releasedAt: Date.now(), substituteToken: undefined, substituteName: undefined, breakRequestedAt: undefined, substituteAcceptedAt: undefined })
     }
-    if (report.tags.includes("Broke down")) {
+    if (report.tags?.includes("Broke down")) {
       let stillReported = false
       for await (const other of ctx.db.query("matchReports")
         .withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", report.eventId).eq("matchNumber", report.matchNumber))) {
-        if (other.teamNumber === report.teamNumber && other.tags.includes("Broke down")) {
+        if (other.teamNumber === report.teamNumber && other.tags?.includes("Broke down")) {
           stillReported = true
           break
         }
@@ -167,7 +168,8 @@ export const saveReport = mutation({
     }
     const separateShifts = shifts.some(value => value !== undefined) || args.transitionActivity !== undefined
     const cycleValues = [args.autoCycles, ...(separateShifts ? shifts : [args.teleopCyclesPerShift]), args.endgameCycles]
-    if (cycleValues.some(value => value !== undefined) || args.autoFuel === undefined || args.teleopFuel === undefined) {
+    const activityOnly = !!args.activityTimeline?.length && cycleValues.every(value => value === undefined) && args.autoFuel === undefined && args.teleopFuel === undefined
+    if (!activityOnly && (cycleValues.some(value => value !== undefined) || args.autoFuel === undefined || args.teleopFuel === undefined)) {
       if (cycleValues.some(value => value === undefined || !Number.isFinite(value) || !Number.isInteger(value * 2) || value < 0 || value > 999)) {
         throw new ConvexError("Enter cycle counts in increments of 0.5 between 0 and 999 for auto, shift, and endgame")
       }
@@ -189,7 +191,7 @@ export const saveReport = mutation({
     if (existing) throw new ConvexError("Match report already submitted. An admin must delete it before scouting this robot again.")
     await requireAssignedTeam(ctx, args, user)
 
-    const tags = args.tags.filter((tag) => tagAllowlist.has(tag)).slice(0, 12)
+    const tags = (args.tags ?? []).filter((tag) => tagAllowlist.has(tag)).slice(0, 12)
     const match = await ctx.db.query("matches").withIndex("by_eventId_and_matchNumber", q => q.eq("eventId", args.eventId).eq("matchNumber", args.matchNumber)).unique()
     const alliance = match?.redTeams.includes(args.teamNumber) ? "red" : match?.blueTeams.includes(args.teamNumber) ? "blue" : null
     const official = alliance && match?.tbaResult ? reportResult(match.tbaResult[alliance]) : {}
@@ -199,8 +201,8 @@ export const saveReport = mutation({
       teleopFuel: args.teleopFuel === undefined ? undefined : clamp(args.teleopFuel, 0, 300),
       offShiftActivity: args.offShiftActivity?.trim(),
       transitionActivity: args.transitionActivity?.trim(),
-      driverRating: clamp(args.driverRating, 1, 10),
-      defenseRating: clamp(args.defenseRating, 1, 10),
+      driverRating: args.driverRating === undefined ? undefined : clamp(args.driverRating, 1, 10),
+      defenseRating: args.defenseRating === undefined ? undefined : clamp(args.defenseRating, 1, 10),
       autoAllianceFuel: args.autoAllianceFuel === undefined ? undefined : clamp(args.autoAllianceFuel, 0, 600),
       opponentAutoFuel: args.opponentAutoFuel === undefined ? undefined : clamp(args.opponentAutoFuel, 0, 600),
       ...official,
@@ -211,6 +213,9 @@ export const saveReport = mutation({
 
     if (args.autoPath && (args.autoPath.length > 200 || args.autoPath.reduce((count, path) => count + path.length, 0) > 2000 || args.autoPath.some(path => !path.length || path.some(({ x, y }) => !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1000 || y < 0 || y > 500)))) {
       throw new ConvexError("Observed auto path is invalid or too large")
+    }
+    if (args.activityTimeline && (args.activityTimeline.length > 300 || args.activityTimeline.some((item, index) => !activityAllowlist.has(item.action) || !Number.isInteger(item.startMs) || !Number.isInteger(item.endMs) || item.startMs < 0 || item.endMs < item.startMs || item.endMs > 1_200_000 || (activityOnly && (item.endMs > 163_000 || (item.startMs < 23_000 && item.endMs > 20_000) || (item.startMs >= 20_000 && item.startMs < 23_000))) || (index > 0 && item.startMs < args.activityTimeline![index - 1].endMs)))) {
+      throw new ConvexError("Match activity timeline is invalid or too large")
     }
     if (match) await ctx.scheduler.runAfter(0, internal.tbaMatches.refreshAfterReport, { eventId: args.eventId, matchNumber: args.matchNumber, attempt: 0 })
     const reportId = await ctx.db.insert("matchReports", doc)

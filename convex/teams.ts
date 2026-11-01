@@ -17,7 +17,7 @@ export const setPicked = mutation({
   },
 })
 
-function climbScore(level: string) {
+function climbScore(level: string | undefined) {
   if (level === "level3") return 3
   if (level === "level2") return 2
   if (level === "level1") return 1
@@ -66,13 +66,14 @@ export const list = query({
         const teamReports = reports.filter(
           (report) => report.teamNumber === team.teamNumber,
         )
+        const ratedReports = teamReports.filter(report => report.driverRating !== undefined)
         const driverAverage =
-          teamReports.reduce((sum, report) => sum + report.driverRating, 0) /
-          Math.max(teamReports.length, 1)
+          ratedReports.reduce((sum, report) => sum + (report.driverRating ?? 0), 0) /
+          Math.max(ratedReports.length, 1)
         const teleopAverage =
           teamReports.reduce((sum, report) => sum + (report.teleopFuel ?? 0), 0) /
           Math.max(teamReports.length, 1)
-        const endgameScores = teamReports.map((report) =>
+        const endgameScores = teamReports.filter(report => report.endgameClimb !== undefined).map((report) =>
           climbScore(report.endgameClimb),
         )
         const bestEndgame = endgameScores.length
@@ -205,7 +206,7 @@ export const detail = query({
       ),
       driverRating: Number(
         (
-          matchReports.reduce((sum, report) => sum + report.driverRating, 0) /
+          matchReports.reduce((sum, report) => sum + (report.driverRating ?? 0), 0) /
           count
         ).toFixed(1),
       ),

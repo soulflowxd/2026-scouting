@@ -1,23 +1,23 @@
-import { useAction, useQuery } from "convex/react"
+import { useQuery } from "convex/react"
 import { queueReport } from "@/lib/scouting-outbox"
 import { ConvexError } from "convex/values"
 import { Check, Clock3, ListFilter } from "lucide-react"
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useBeforeUnload, useBlocker } from "react-router"
 import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
 import { AssignmentHandoff } from "@/components/assignment-handoff"
-import { Stepper } from "@/components/stepper"
-import { AutoPath, type PathPoint } from "@/components/auto-path"
+import { ScoutingLeaderboard } from "@/components/scouting-leaderboard"
+import { MatchActivity } from "@/components/match-activity"
+import { matchActions, endActivityAt, AUTO_END_MS, TELEOP_START_MS, MATCH_END_MS, type MatchActivitySegment } from "@/lib/match-activity"
+import type { PathPoint } from "@/components/auto-path"
 import { MatchVideoLink } from "@/components/match-video"
 import { MatchVideoFolder } from "@/components/match-video-folder"
 import { useDriveMatchVideos } from "@/lib/drive-match-videos"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
 import { eventLabel, useActiveEvent } from "@/lib/active-event"
-import { climbLabels, matchTags } from "@/lib/labels"
+import { matchTags } from "@/lib/labels"
 import { cn } from "@/lib/utils"
 
 type AutoClimb = "none" | "level1"
@@ -42,6 +42,9 @@ type MatchFormState = {
   transitionActivity: string
   endgameCycles: number
   offShiftActivity: string
+  activityStartedAt: number
+  activityEndedAt: number
+  activityTimeline: MatchActivitySegment[]
   teleopNotes: string
   endgameClimb: EndgameClimb
   endgameNotes: string
@@ -64,6 +67,9 @@ const emptyMatchForm: MatchFormState = {
   transitionActivity: "",
   endgameCycles: 0,
   offShiftActivity: "",
+  activityStartedAt: 0,
+  activityEndedAt: 0,
+  activityTimeline: [],
   teleopNotes: "",
   endgameClimb: "none",
   endgameNotes: "",
@@ -135,6 +141,7 @@ export function MatchScoutingRoute() {
         </div>
       </div>
       <MatchVideoFolder key={activeEvent._id} eventId={activeEvent._id} settings={driveVideos.settings} canEdit={me?.role === "admin"} loading={driveVideos.loading} count={driveVideos.videos.length} error={driveVideos.error} onRefresh={driveVideos.refresh} />
+      {me?.approvalStatus === "approved" && <ScoutingLeaderboard eventId={activeEvent._id} />}
       {myAssignments && <section className="grid gap-3 rounded-xl border border-primary/30 bg-card p-4" aria-label="My scouting assignments">
         <div><h2 className="text-sm font-semibold">{myAssignments.mode === "manual" ? `Your driver station: ${myAssignments.driverStations.join(", ") || "Not assigned yet"}` : `Your regular teams: ${myAssignments.teams.map(team => team.label).join(", ") || "None assigned yet"}`}</h2>
           <p className="mt-1 text-xs text-muted-foreground">{myAssignments.mode === "manual" ? myAssignments.driverStations.length ? "Scout the team in your assigned driver station for each match. Open a match shortcut below to start scouting." : "You can request to take over for an assigned scout below, even if you are not included in assignments." : myAssignments.teams.length || myAssignments.matchAssignments.length ? "Follow your match assignment below—you may cover a different team when your regular teams play together." : "Ask an admin to assign your teams, or request to take over for another scout below."}</p>
@@ -398,19 +405,6 @@ function MatchForm({
   matchNumber: number
   teamNumber: number
 }) {
-  const tbaMatch = useQuery(api.tbaMatches.forMatch, { eventId, matchNumber })
-  const refreshTba = useAction(api.tbaMatches.refresh)
-  const [tbaStatus, setTbaStatus] = useState("loading")
-  const side = tbaMatch?.redTeams.includes(teamNumber) ? "red" : tbaMatch?.blueTeams.includes(teamNumber) ? "blue" : null
-  const officialResult = side ? tbaMatch?.tbaResult?.[side] : undefined
-  const officialSource = tbaMatch?.firstEventCode || tbaMatch?.officialResultSource === "first" ? "FIRST" : "TBA"
-  useEffect(() => {
-    let active = true
-    const refresh = () => { void refreshTba({ eventId, matchNumber }).then(status => { if (active) setTbaStatus(status) }).catch(() => { if (active) setTbaStatus("unavailable") }) }
-    refresh()
-    const interval = window.setInterval(refresh, 60_000)
-    return () => { active = false; window.clearInterval(interval) }
-  }, [eventId, matchNumber, refreshTba])
   const scoutingClosed = useQuery(api.events.list)?.find(event => event._id === eventId)?.scoutingEnabled === false
   const me = useQuery(api.members.me)
   const assignments = useQuery(api.scoutAssignments.mine, { eventId })
@@ -430,6 +424,8 @@ function MatchForm({
       }
       result.tags = Array.isArray(draft.tags) ? draft.tags.filter((tag): tag is string => typeof tag === "string" && matchTags.includes(tag)) : []
       if (Array.isArray(draft.autoPath) && draft.autoPath.length <= 200 && draft.autoPath.every(path => Array.isArray(path) && path.every(p => p && typeof p.x === "number" && Number.isFinite(p.x) && p.x >= 0 && p.x <= 1000 && typeof p.y === "number" && Number.isFinite(p.y) && p.y >= 0 && p.y <= 500)) && draft.autoPath.reduce((count, path) => count + path.length, 0) <= 2000) result.autoPath = draft.autoPath
+      if (Array.isArray(draft.activityTimeline) && draft.activityTimeline.length <= 300 && draft.activityTimeline.every(item => item && typeof item === "object" && matchActions.includes(item.action) && Number.isInteger(item.startMs) && Number.isInteger(item.endMs) && item.startMs >= 0 && item.endMs >= item.startMs && item.endMs <= 1_200_000)) result.activityTimeline = draft.activityTimeline
+      if (!result.activityStartedAt) { result.activityTimeline = []; result.activityEndedAt = 0 }
       if (!["none", "level1"].includes(result.autoClimb)) result.autoClimb = "none"
       if (!["none", "level1", "level2", "level3"].includes(result.endgameClimb)) result.endgameClimb = "none"
       return result
@@ -463,10 +459,12 @@ function MatchForm({
 
   async function onSubmit() {
     if (savingRef.current) return
+    if (!form.activityStartedAt || !form.activityEndedAt || !form.activityTimeline.length) return
     savingRef.current = true
     setSaving(true)
     try {
-      await queueReport(scoutToken, { kind: "match", args: { eventId, matchNumber, teamNumber, ...form }, photos: [] })
+      const activityTimeline = form.activityTimeline
+      await queueReport(scoutToken, { kind: "match", args: { eventId, matchNumber, teamNumber, activityTimeline }, photos: [] })
       toast.success(`QM${matchNumber} report saved on device. Upload pending.`)
       setForm(emptyMatchForm)
       setSavedForm(JSON.stringify(emptyMatchForm))
@@ -479,14 +477,6 @@ function MatchForm({
       setSaving(false)
     }
   }
-
-  const toggleTag = (tag: string) =>
-    setForm((current) => ({
-      ...current,
-      tags: current.tags.includes(tag)
-        ? current.tags.filter((item) => item !== tag)
-        : [...current.tags, tag],
-    }))
 
   return (
     <div className="grid gap-4">
@@ -502,212 +492,32 @@ function MatchForm({
         <p role="status" className="text-xs text-muted-foreground">{hasDraft ? "Draft saved on this device" : "Drafts stay on this device"}{dirty ? " · Unsaved changes" : ""} · Not submitted</p>
         <Button type="button" variant="outline" disabled={saving} onClick={() => saveDraft()}>Save draft</Button>
       </div>
+      {reportSubmitted === false && allowedByAssignment && !scoutingClosed && <MatchActivity startedAt={form.activityStartedAt} endedAt={form.activityEndedAt} timeline={form.activityTimeline}
+        onStart={() => setForm(current => ({ ...current, activityStartedAt: Date.now(), activityEndedAt: 0, activityTimeline: [] }))}
+        onAction={action => setForm(current => {
+          if (!current.activityStartedAt || current.activityEndedAt || current.activityTimeline.length >= 300) return current
+          const at = Math.min(MATCH_END_MS, Math.max(0, Date.now() - current.activityStartedAt))
+          if (at >= AUTO_END_MS && at < TELEOP_START_MS || at >= MATCH_END_MS) return current
+          const previous = current.activityTimeline.at(-1)
+          if (previous?.action === action && !(previous.startMs < AUTO_END_MS && at >= TELEOP_START_MS)) return current
+          return { ...current, activityTimeline: [...current.activityTimeline.slice(0, -1), ...(previous ? [{ ...previous, endMs: endActivityAt(previous, at) }] : []), { action, startMs: at, endMs: at }] }
+        })}
+        onStop={() => setForm(current => {
+          if (!current.activityStartedAt || current.activityEndedAt) return current
+          const endedAt = Date.now()
+          const at = Math.min(MATCH_END_MS, Math.max(0, endedAt - current.activityStartedAt))
+          return { ...current, activityEndedAt: endedAt, activityTimeline: current.activityTimeline.map((item, index) => index === current.activityTimeline.length - 1 ? { ...item, endMs: endActivityAt(item, at) } : item) }
+        })} />}
       {reportSubmitted && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">Report already submitted for team {teamNumber} in QM{matchNumber}. An admin must delete it in team details before this robot can be scouted again.</p>}
       <fieldset disabled={saving || reportSubmitted !== false} className="grid min-w-0 gap-4">
-      <div className="rounded-xl border bg-card p-4">
-        <h2 className="text-xl font-semibold">QM{matchNumber} · Team {teamNumber}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{allowedByAssignment ? "Ready to scout" : assignments?.enabled ? "This robot is not your assignment. Open your match shortcut above or arrange an assignment handoff." : "Ask an admin to set up scouting assignments."}</p>
-      </div>
-      <FormSection title="Autonomous">
-        {officialResult?.wonAuto !== undefined ? <p className="text-sm font-medium">{officialSource}: {officialResult.tiedAuto ? "Auto fuel tied" : officialResult.wonAuto ? "Won auto" : "Lost auto"} · {officialResult.autoAllianceFuel}–{officialResult.opponentAutoFuel} fuel</p> : <>
-        <Button type="button" variant={form.wonAuto ? "default" : "outline"} aria-pressed={form.wonAuto}
-          onClick={() => setForm(current => ({ ...current, wonAuto: !current.wonAuto }))}>
-          {form.wonAuto && <Check aria-hidden="true" />}Won auto
+        <div className="rounded-xl border bg-card p-4">
+          <h2 className="text-xl font-semibold">QM{matchNumber} · Team {teamNumber}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{allowedByAssignment ? "Tap the robot activity as the match unfolds." : assignments?.enabled ? "This robot is not your assignment." : "Ask an admin to set up scouting assignments."}</p>
+        </div>
+        <Button type="button" size="lg" disabled={!allowedByAssignment || scoutingClosed || saving || !form.activityStartedAt || !form.activityEndedAt || !form.activityTimeline.length} onClick={() => void onSubmit()}>
+          {saving ? "Saving report…" : "Submit activity report"}
         </Button>
-        </>}
-        <Stepper
-          id="autoCycles"
-          label="Auto cycles"
-          step={0.5}
-          value={form.autoCycles}
-          onChange={(autoCycles) => setForm((current) => ({ ...current, autoCycles }))}
-        />
-        <OptionGroup
-          label="Tower climb"
-          value={form.autoClimb}
-          options={["none", "level1"]}
-          onChange={(autoClimb) =>
-            setForm((current) => ({ ...current, autoClimb: autoClimb as AutoClimb }))
-          }
-        />
-        <div className="grid gap-2">
-        <Label htmlFor="auto-notes">Auto notes</Label>
-        <Textarea
-          id="auto-notes"
-          value={form.autoNotes}
-          onChange={(event) =>
-            setForm((current) => ({ ...current, autoNotes: event.target.value }))
-          }
-          placeholder="What did you notice during auto?"
-          aria-label="Auto notes"
-        />
-        </div>
-        <div id="observed-auto-path" className="grid min-w-0 gap-2">
-          <h3 className="text-sm font-medium">Observed auto path</h3>
-          <p className="text-xs text-muted-foreground">Draw where this robot actually drove during auto, not its planned pit path. Use Line to draw or Points to connect taps. If it did not move, tap its starting position.</p>
-          <AutoPath value={form.autoPath} onChange={autoPath => setForm(current => ({ ...current, autoPath }))} />
-        </div>
-      </FormSection>
-      <FormSection title="Teleop">
-        <p className="text-sm text-muted-foreground">1 cycle = one intake set followed immediately by one shooting set.</p>
-        <label className="grid gap-2 text-sm font-medium">
-          What does the robot do in transition? (required)
-          <Textarea required value={form.transitionActivity}
-            onChange={event => setForm(current => ({ ...current, transitionActivity: event.target.value }))}
-            placeholder="For example: shoot preloaded fuel, collect, reposition, or idle" />
-        </label>
-        <div className="grid gap-4 lg:grid-cols-3">
-          {(["shift1Cycles", "shift2Cycles", "shift3Cycles"] as const).map((field, index) => (
-            <div key={field} className="rounded-lg border bg-muted/20 p-3">
-              <Stepper id={field} label={`Shift ${index + 1} cycles`} value={form[field]} step={0.5}
-                onChange={value => setForm(current => ({ ...current, [field]: value }))} />
-            </div>
-          ))}
-        </div>
-        <label className="grid gap-2 text-sm font-medium">
-          What does the robot do off-shift? (required)
-          <Textarea required value={form.offShiftActivity}
-            onChange={(event) => setForm(current => ({ ...current, offShiftActivity: event.target.value }))}
-            placeholder="For example: collect fuel, defend, feed teammates, or idle" />
-        </label>
-        <div className="grid gap-2">
-        <Label htmlFor="teleop-notes">Teleop notes (observations)</Label>
-        <Textarea
-          id="teleop-notes"
-          value={form.teleopNotes}
-          onChange={(event) =>
-            setForm((current) => ({ ...current, teleopNotes: event.target.value }))
-          }
-          placeholder="Describe the robot’s performance and consistency."
-          aria-label="Teleop notes (observations)"
-        />
-        </div>
-      </FormSection>
-      <FormSection title="Endgame">
-        <Stepper id="endgameCycles" label="Endgame cycles" value={form.endgameCycles} step={0.5}
-          onChange={(endgameCycles) => setForm(current => ({ ...current, endgameCycles }))} />
-        <OptionGroup
-          label="Tower climb"
-          value={form.endgameClimb}
-          options={["none", "level1", "level2", "level3"]}
-          onChange={(endgameClimb) =>
-            setForm((current) => ({
-              ...current,
-              endgameClimb: endgameClimb as EndgameClimb,
-            }))
-          }
-        />
-        <div className="grid gap-2">
-        <Label htmlFor="endgame-notes">Endgame notes</Label>
-        <Textarea
-          id="endgame-notes"
-          value={form.endgameNotes}
-          onChange={(event) =>
-            setForm((current) => ({ ...current, endgameNotes: event.target.value }))
-          }
-          placeholder="Describe the climb or other endgame behavior."
-          aria-label="Endgame notes"
-        />
-        </div>
-      </FormSection>
-      <FormSection title="Match result">
-        {officialResult ? <div className="grid gap-1">
-          <p className="text-sm font-semibold">{officialResult.tiedMatch ? "Tied match" : officialResult.wonMatch ? "Won match" : "Lost match"} · {officialResult.totalMatchPoints} alliance points</p>
-          <a className="text-xs text-primary underline" href={tbaMatch!.resultUrl} target="_blank" rel="noreferrer">Automatically synced from {officialSource === "FIRST" ? "FIRST" : "The Blue Alliance"}</a>
-          <p className="text-xs text-muted-foreground">Robot cycles and activities still come from your observations.</p>
-        </div> : <>
-        <Button type="button" variant={form.wonMatch ? "default" : "outline"} aria-pressed={form.wonMatch}
-          onClick={() => setForm(current => ({ ...current, wonMatch: !current.wonMatch }))}>
-          {form.wonMatch && <Check aria-hidden="true" />}Won match
-        </Button>
-        <Stepper id="totalMatchPoints" label="Total alliance match points" max={9999} value={form.totalMatchPoints}
-          onChange={totalMatchPoints => setForm(current => ({ ...current, totalMatchPoints }))} />
-        <p className="text-xs text-muted-foreground">Enter the alliance’s final score, not this robot’s individual points.</p>
-        <p className="text-xs text-muted-foreground">{tbaStatus === "manual" ? "This event uses manual results." : tbaStatus === "loading" ? `Checking ${officialSource} for match results…` : tbaStatus === "unavailable" ? `${officialSource} is unavailable. You can enter results manually; we’ll retry automatically.` : `${officialSource} results haven’t posted yet. Enter results manually or keep scouting; they’ll sync when available.`}</p>
-        </>}
-      </FormSection>
-      <FormSection title="Ratings">
-        <Stepper
-          id="driverRating"
-          label="Driver rating"
-          min={1}
-          max={10}
-          value={form.driverRating}
-          onChange={(driverRating) =>
-            setForm((current) => ({ ...current, driverRating }))
-          }
-        />
-        <Stepper
-          id="defenseRating"
-          label="Defense rating"
-          min={1}
-          max={10}
-          value={form.defenseRating}
-          onChange={(defenseRating) =>
-            setForm((current) => ({ ...current, defenseRating }))
-          }
-        />
-      </FormSection>
-      <FormSection title="Tags">
-        <div className="flex flex-wrap gap-2">
-          {matchTags.map((tag) => (
-            <Button
-              key={tag}
-              type="button"
-              variant={form.tags.includes(tag) ? "default" : "outline"}
-              aria-pressed={form.tags.includes(tag)}
-              onClick={() => toggleTag(tag)}
-            >
-              {tag}
-            </Button>
-          ))}
-        </div>
-      </FormSection>
-      <Button type="button" size="lg" disabled={!allowedByAssignment || scoutingClosed || saving || !form.offShiftActivity.trim() || !form.transitionActivity.trim()} onClick={() => void onSubmit()}>
-        {saving ? "Saving report…" : "Submit match report"}
-      </Button>
       </fieldset>
-    </div>
-  )
-}
-
-function FormSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="grid gap-4 rounded-xl border bg-card p-4 sm:p-5">
-      <h3 className="border-b pb-3 text-base font-semibold tracking-tight">{title}</h3>
-      {children}
-    </div>
-  )
-}
-
-function OptionGroup({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string
-  value: string
-  options: string[]
-  onChange: (value: string) => void
-}) {
-  return (
-    <div className="grid gap-2">
-      <p className="text-sm font-medium">{label}</p>
-      <div role="group" aria-label={label} className={cn("grid grid-cols-2 gap-2", options.length > 2 && "sm:grid-cols-4")}>
-        {options.map((option) => (
-          <Button
-            key={option}
-            type="button"
-            variant={value === option ? "default" : "outline"}
-            aria-pressed={value === option}
-            className="h-11"
-            onClick={() => onChange(option)}
-          >
-            {climbLabels[option]}
-          </Button>
-        ))}
-      </div>
     </div>
   )
 }

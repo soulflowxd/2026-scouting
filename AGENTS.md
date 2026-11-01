@@ -18,6 +18,12 @@ redirects here; keep project guidance here rather than duplicating it.
 - `npm run build` runs TypeScript checks and builds the frontend.
 - `npm test` runs the Vitest/convex-test backend suite.
 - `npm run lint` runs ESLint.
+- For a shareable development build, connect this repository to the existing
+  `2026-scouting` Convex project with `npx convex dev --once --configure existing
+  --dev-deployment cloud`. Use its development `VITE_CONVEX_URL` for a Vercel
+  preview deployment (`vercel deploy --yes --build-env VITE_CONVEX_URL=<url>`).
+  The preview branch of `scripts/deploy.mjs` builds the frontend without
+  deploying Convex production. Do not point a preview at the local Convex URL.
 - Verify relevant tests and a production build before deploying code changes.
 - Preserve unrelated work in a dirty checkout. Stage only intended files;
   never reset or discard another contributor's changes.
@@ -50,6 +56,13 @@ redirects here; keep project guidance here rather than duplicating it.
   must remain blocked. Recheck recipient eligibility before push delivery.
 
 ## Scouting Behavior
+
+- Match report entry uses a timed seven-action activity tracker (Scoring,
+  Passing, Climbing, Idle, Defending, Traveling, Intaking) inspired by 9483's
+  scouting workflow. Show 20 seconds of auto, a 3-second gap, then 2:20 of
+  teleop; do not collect cycles, ratings, tags, paths, or notes in the match
+  entry form. Keep existing reports and pit scouting intact. Activity-only
+  submissions must remain compatible with the existing report backend.
 
 - Scouts request leave for pit shifts from Matches. Pending leave never changes
   assignments. Only approved admins can approve or decline. Approval releases

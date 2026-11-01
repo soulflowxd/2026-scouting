@@ -272,11 +272,11 @@ export function TeamDetailDialog({
             <div className="grid gap-2">
               <h2 className="font-medium">Breakdown history</h2>
               {[...new Set([
-                ...detail.matchReports.filter(report => report.tags.includes("Broke down")).map(report => report.matchNumber),
+                ...detail.matchReports.filter(report => report.tags?.includes("Broke down")).map(report => report.matchNumber),
                 ...detail.breakdownFollowUps.map(report => report.matchNumber),
               ])].sort((a, b) => b - a).map(matchNumber => {
                 const followUp = detail.breakdownFollowUps.find(report => report.matchNumber === matchNumber)
-                const reports = detail.matchReports.filter(report => report.matchNumber === matchNumber && report.tags.includes("Broke down"))
+                const reports = detail.matchReports.filter(report => report.matchNumber === matchNumber && report.tags?.includes("Broke down"))
                 return (
                   <div key={matchNumber} className="grid gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
                     <p className="font-medium">QM{matchNumber} · {followUp ? "Pit follow-up recorded" : "Awaiting pit follow-up"}</p>
@@ -297,7 +297,7 @@ export function TeamDetailDialog({
                   </div>
                 )
               })}
-              {!detail.matchReports.some(report => report.tags.includes("Broke down")) && detail.breakdownFollowUps.length === 0 && <p className="text-sm text-muted-foreground">No breakdowns reported at this event.</p>}
+              {!detail.matchReports.some(report => report.tags?.includes("Broke down")) && detail.breakdownFollowUps.length === 0 && <p className="text-sm text-muted-foreground">No breakdowns reported at this event.</p>}
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <Metric label="Avg Auto Cycles" value={String(detail.averages.autoCycles ?? "—")} />
@@ -397,19 +397,24 @@ export function TeamDetailDialog({
                       onDelete={() => removeMatchReport({ reportId: report._id })}
                     />}
                     <p className="font-medium">QM{report.matchNumber}</p>
-                    <p>
+                    {!!report.activityTimeline?.length && <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Timed robot activities">
+                      {report.activityTimeline.map((activity, index) => <span key={`${activity.startMs}-${index}`} className="rounded-md bg-muted px-2 py-1 text-xs tabular-nums">
+                        {activity.action} {(activity.startMs / 1000).toFixed(1)}–{(activity.endMs / 1000).toFixed(1)}s
+                      </span>)}
+                    </div>}
+                    {(report.autoCycles !== undefined || report.autoFuel !== undefined) && <p>
                       {report.autoCycles !== undefined
                         ? `Auto ${report.autoCycles} cycles, ${report.shift1Cycles !== undefined ? `Shift 1: ${report.shift1Cycles}, Shift 2: ${report.shift2Cycles}, Shift 3: ${report.shift3Cycles}` : `Legacy cycles per shift: ${report.teleopCyclesPerShift}`}, Endgame ${report.endgameCycles} cycles · Climb `
                         : `Legacy fuel counts: Auto ${report.autoFuel}, Teleop ${report.teleopFuel} · Climb `}
-                      {climbLabels[report.endgameClimb]}
-                    </p>
-                    <p>Driver {report.driverRating}/10 · Defense {report.defenseRating}/10</p>
+                      {report.endgameClimb ? climbLabels[report.endgameClimb] : "Not recorded"}
+                    </p>}
+                    {report.driverRating !== undefined && report.defenseRating !== undefined && <p>Driver {report.driverRating}/10 · Defense {report.defenseRating}/10</p>}
                     {(report.wonAuto !== undefined || report.wonMatch !== undefined || report.totalMatchPoints !== undefined) && <p>
                       Auto win: {report.wonAuto === undefined ? "Unknown" : report.wonAuto ? "Yes" : "No"} · Match win: {report.wonMatch === undefined ? "Unknown" : report.wonMatch ? "Yes" : "No"} · Alliance points: {report.totalMatchPoints ?? "Unknown"}
                     </p>}
                     {report.offShiftActivity && <p className="whitespace-pre-wrap break-words">Off-shift: {report.offShiftActivity}</p>}
                     {report.transitionActivity && <p className="whitespace-pre-wrap break-words">Transition: {report.transitionActivity}</p>}
-                    {!!report.tags.length && <p className="mt-1 text-muted-foreground">{report.tags.join(" · ")}</p>}
+                    {!!report.tags?.length && <p className="mt-1 text-muted-foreground">{report.tags.join(" · ")}</p>}
                     {report.autoNotes && <p className="whitespace-pre-wrap break-words">Auto: {report.autoNotes}</p>}
                     {!!report.autoPath?.length && <div className="mt-3 grid gap-2"><p className="font-medium">Observed auto path</p><AutoPath value={report.autoPath} readOnly /></div>}
                     {report.teleopNotes && <p className="whitespace-pre-wrap break-words">Teleop: {report.teleopNotes}</p>}

@@ -50,6 +50,7 @@ import type * as scoutAssignments from "../scoutAssignments.js";
 import type * as scoutHandoffs from "../scoutHandoffs.js";
 import type * as scoutLeave from "../scoutLeave.js";
 import type * as scoutingCleanup from "../scoutingCleanup.js";
+import type * as scoutingProgress from "../scoutingProgress.js";
 import type * as tbaMatches from "../tbaMatches.js";
 import type * as teams from "../teams.js";
 import type * as validators from "../validators.js";
@@ -103,6 +104,7 @@ declare const fullApi: ApiFromModules<{
   scoutHandoffs: typeof scoutHandoffs;
   scoutLeave: typeof scoutLeave;
   scoutingCleanup: typeof scoutingCleanup;
+  scoutingProgress: typeof scoutingProgress;
   tbaMatches: typeof tbaMatches;
   teams: typeof teams;
   validators: typeof validators;

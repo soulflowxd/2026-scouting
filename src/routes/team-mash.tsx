@@ -110,7 +110,7 @@ function RobotCard({ team, eventId, year, side, onChoose, onDetails, disabled }:
   const detail = useQuery(api.teams.detail, { eventId, teamNumber: team.teamNumber })
   const reports = detail?.matchReports
   const scoutedMatches = reports ? new Set(reports.map(report => report.matchNumber)).size : undefined
-  const breakdowns = reports ? new Set(reports.filter(report => report.tags.includes("Broke down")).map(report => report.matchNumber)).size : undefined
+  const breakdowns = reports ? new Set(reports.filter(report => report.tags?.includes("Broke down")).map(report => report.matchNumber)).size : undefined
   const stats = detail?.stats
   const played = stats?.wins !== undefined && stats.losses !== undefined && stats.ties !== undefined ? stats.wins + stats.losses + stats.ties : undefined
   function quality(key: "electricalQuality" | "buildQuality") {

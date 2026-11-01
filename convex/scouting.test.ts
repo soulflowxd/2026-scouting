@@ -73,6 +73,41 @@ async function seedEvent() {
 }
 
 describe("scouting backend", () => {
+  test("activity-only reports do not invent cycles or ratings", async () => {
+    const { t, eventId } = await seedEvent()
+    const scout = await approvedScout(t, "timed@example.com", "timed-scout")
+    await expect(scout.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: 1,
+      activityTimeline: [{ action: "Idle", startMs: 19_000, endMs: 23_000 }] })).rejects.toThrow("timeline is invalid")
+    await scout.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: 1,
+      activityTimeline: [{ action: "Idle", startMs: 0, endMs: 20_000 }, { action: "Traveling", startMs: 23_000, endMs: 25_000 }] })
+    const detail = await scout.query(api.teams.detail, { eventId, teamNumber: 1 })
+    expect(detail?.matchReports[0].activityTimeline).toHaveLength(2)
+    expect(detail?.matchReports[0].autoCycles).toBeUndefined()
+    expect(detail?.matchReports[0].driverRating).toBeUndefined()
+  })
+
+  test("timed activities persist and only submitted reports count toward contributions", async () => {
+    const { t, eventId } = await seedEvent()
+    const scout = await approvedScout(t, "activity@example.com", "activity-scout")
+    const report = { eventId, matchNumber: 1, teamNumber: 1,
+      autoFuel: 0, teleopFuel: 0, autoClimb: "none" as const, autoNotes: "",
+      teleopNotes: "", endgameClimb: "none" as const, endgameNotes: "",
+      driverRating: 5, defenseRating: 5, tags: [] }
+    expect((await scout.query(api.scoutingProgress.leaderboard, { eventId }))[0].match).toBe(0)
+    await expect(scout.mutation(api.matchScouting.saveReport, { ...report, activityTimeline: [
+      { action: "Scoring", startMs: 1000, endMs: 4000 },
+      { action: "Passing", startMs: 3000, endMs: 5000 },
+    ] })).rejects.toThrow("timeline is invalid")
+    const activityTimeline = [
+      { action: "Intaking", startMs: 1000, endMs: 4000 },
+      { action: "Scoring", startMs: 4000, endMs: 7000 },
+    ]
+    await scout.mutation(api.matchScouting.saveReport, { ...report, activityTimeline })
+    const detail = await scout.query(api.teams.detail, { eventId, teamNumber: 1 })
+    expect(detail?.matchReports[0].activityTimeline).toEqual(activityTimeline)
+    expect((await scout.query(api.scoutingProgress.leaderboard, { eventId }))[0]).toMatchObject({ match: 1, pit: 0, isYou: true })
+  })
+
   test.each([undefined, []])("match reports can be submitted without an auto drawing (%j)", async autoPath => {
     const { t, eventId } = await seedEvent()
     const scout = await approvedScout(t, "path@example.com", "path-scout")

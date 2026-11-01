@@ -7,6 +7,8 @@ import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
 import { Stepper } from "@/components/stepper"
+import { ScoutingRun } from "@/components/scouting-run"
+import { ScoutingLeaderboard } from "@/components/scouting-leaderboard"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -84,6 +86,7 @@ const emptyPitForm: PitFormState = {
 
 export function PitScoutingRoute() {
   const { activeEvent } = useActiveEvent()
+  const me = useQuery(api.members.me)
   const teams = useQuery(
     api.teams.list,
     activeEvent ? { eventId: activeEvent._id } : "skip",
@@ -136,6 +139,7 @@ export function PitScoutingRoute() {
           {eventLabel(activeEvent)} · Choose a team to record its robot capabilities.
         </p>
       </div>
+      {me?.approvalStatus === "approved" && <ScoutingLeaderboard eventId={activeEvent._id} />}
       {selectedTeam === null ? (
         <>
           <div className="grid min-w-0 gap-3 border-y py-4">
@@ -382,6 +386,13 @@ function PitForm({
           Back
         </Button>
       </div>
+      <ScoutingRun title={`Team ${teamNumber} pit visit`} steps={[
+        { title: "Fuel", done: !!form.fuelCapacity || !!form.bps || form.canScoreFuelHub, detail: "check scoring and fuel capacity" },
+        { title: "Robot configuration", done: !!form.drivetrain.trim() && !!form.robotArchitecture.trim(), detail: "record drivetrain and robot design" },
+        { title: "Build, electrical and programming", done: !!form.electricalQuality && !!form.buildQuality && !!form.programmingLanguage.trim(), detail: "rate the build and record programming" },
+        { title: "Notes", done: !!form.autoDescription.trim() || !!form.notes.trim() || form.autoPath.length > 0, detail: "capture the robot's auto and observations" },
+        { title: "Robot photos", done: photoIds.length + photos.length > 0, detail: "add a clear robot photo" },
+      ]} />
       <fieldset disabled={saving || !!queuedId} className="grid gap-4">
       <FormSection title="Fuel">
         <CheckRow label="Scores Fuel in Hub" checked={form.canScoreFuelHub} onChange={(value) => setBool("canScoreFuelHub", value)} />
@@ -556,7 +567,7 @@ function LocalPhoto({ photo, disabled, onRemove }: { photo: File; disabled: bool
 
 function FormSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="grid gap-4 rounded-xl border bg-card p-4 sm:p-5">
+    <div id={`scouting-step-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="grid scroll-mt-20 gap-4 rounded-xl border bg-card p-4 sm:p-5">
       <h3 className="border-b pb-3 text-base font-semibold tracking-tight">{title}</h3>
       {children}
     </div>
