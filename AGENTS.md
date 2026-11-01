@@ -22,7 +22,7 @@ redirects here; keep project guidance here rather than duplicating it.
   `2026-scouting` Convex project with `npx convex dev --once --configure existing
   --dev-deployment cloud`. Use its development `VITE_CONVEX_URL` for a Vercel
   preview deployment (`vercel deploy --yes --build-env VITE_CONVEX_URL=<url>`).
-  The preview branch of `scripts/deploy.mjs` builds the frontend without
+  `scripts/deploy.mjs` builds previews without
   deploying Convex production. Set `VITE_CONVEX_URL` in Vercel's Preview
   environment for any Git branch that builds automatically. Do not point a
   preview at the local Convex URL.
@@ -158,6 +158,10 @@ redirects here; keep project guidance here rather than duplicating it.
   and backend query authorization. Revoke form access when assignments transfer;
   retain access to the original scout's historical matches. Approved admins retain
   oversight; official schedules and results remain viewable.
+- Matches has one search field above the schedule. It filters qualification
+  matches by QM number or by a team number on either alliance; `QM12` searches
+  match numbers specifically, and `team 9128` searches team numbers specifically.
+  Keep searching independent of assignment permissions and team sort order.
 - Match videos stay on Google Drive. Approved admins connect one HTTPS Drive
   folder per event. Other events accept `qm1.mp4`, `qm2.mp4`, and so on, while
   STEM Gals (`2026txmck`) requires `stem gals qm1.mp4`, never bare `qm1`.
@@ -298,6 +302,13 @@ redirects here; keep project guidance here rather than duplicating it.
   Convex deployment and frontend build with `VITE_CONVEX_URL` injected.
 - Deploy with `vercel deploy --prod --yes` only when authorized. Wait for
   completion and report failures accurately.
+- A push to `master` triggers the production GitHub Actions workflow. Its
+  Vercel project check returned HTTP 403 on November 1, 2026, before the build;
+  the linked local Vercel CLI successfully deployed that commit and aliased
+  `https://2026-scouting.vercel.app`. Verify the workflow result, and if it
+  fails, use the linked project for an authorized production deployment while
+  keeping the existing site serving. The GitHub token or project access still
+  needs correction; do not assume a successful push means a successful deploy.
 - Keep API keys and deployment credentials in environment variables. Never
   commit `.env` files, paste secrets into source, or print credentials in logs.
 - FIRST API credentials belong in server-side `FIRST_API_USERNAME` and

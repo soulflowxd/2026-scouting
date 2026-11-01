@@ -17,6 +17,12 @@ held. Recording begins on press and ends on release. Keep the segment timeline
 directly below the buttons with the elapsed position and recent activities.
 The selected robot's alliance and its own hub status remain visible.
 
+The Matches schedule has a single search input above the match rows. Plain
+numbers match QM numbers or either alliance's team numbers. `QM`/`Q` prefixes
+limit search to matches; `team`/`t` prefixes limit it to team numbers. Filtering
+does not change assignment ownership or which report a scout may open. Show a
+result count and a clear empty state when nothing matches.
+
 ## Pit scouting and Rank Teams
 
 Put team search before pit results. Search number, event alias, nickname, and
