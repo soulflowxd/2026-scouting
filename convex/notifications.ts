@@ -30,12 +30,23 @@ export const mine = query({
       .order("desc")
       .take(500)
     const pending = []
+    const responsibility = new Map<string, string | null>()
     for (const notification of notifications) {
       const completed = await ctx.db.query("breakdownFollowUps")
         .withIndex("by_eventId_and_matchNumber_and_teamNumber", (q) =>
           q.eq("eventId", notification.eventId).eq("matchNumber", notification.matchNumber).eq("teamNumber", notification.teamNumber))
         .unique()
-      if (!completed) pending.push(notification)
+      if (completed) continue
+      const key = `${notification.eventId}:${notification.teamNumber}`
+      if (!responsibility.has(key)) {
+        const assignment = await ctx.db.query("scoutTeamAssignments")
+          .withIndex("by_eventId_and_teamNumber", q => q.eq("eventId", notification.eventId).eq("teamNumber", notification.teamNumber))
+          .unique()
+        const member = assignment ? await ctx.db.get(assignment.memberId) : null
+        responsibility.set(key, member && !member.mergedInto && member.approvalStatus !== "rejected"
+          ? member.name || member.email || "Assigned scout" : null)
+      }
+      pending.push({ ...notification, responsibleScoutName: responsibility.get(key) ?? null })
     }
     return pending
   },
@@ -74,7 +85,7 @@ export const submitBreakdownFollowUp = mutation({
   handler: async (ctx, args) => {
     const user = await requireApprovedUserFromDb(ctx)
     const notification = await ctx.db.get(args.notificationId)
-    if (!notification || notification.recipientToken !== user.tokenIdentifier) {
+    if (!notification) {
       throw new ConvexError("Notification not found")
     }
     const whatBroke = args.whatBroke.trim()

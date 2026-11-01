@@ -22,7 +22,7 @@ const tagAllowlist = new Set([
   "Good at crossing Bump/Trench",
   "Strong climber",
 ])
-const activityAllowlist = new Set(["Scoring", "Passing", "Climbing", "Idle", "Defending", "Traveling", "Intaking"])
+const activityAllowlist = new Set(["Scoring", "Passing", "Climbing", "Idle", "Defending", "Traveling", "Intaking", "Stealing"])
 
 export const saveVideoLink = mutation({
   args: { matchId: v.id("matches"), videoUrl: v.string() },

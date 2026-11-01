@@ -59,10 +59,13 @@ redirects here; keep project guidance here rather than duplicating it.
 
 ## Scouting Behavior
 
-- Match report entry uses a timed seven-action activity tracker (Scoring,
-  Passing, Climbing, Idle, Defending, Traveling, Intaking) inspired by 9483's
+- Match report entry uses a timed eight-action activity tracker (Scoring,
+  Passing, Climbing, Idle, Defending, Traveling, Intaking, Stealing) inspired by 9483's
   scouting workflow. Show 20 seconds of auto, a 3-second gap, then 2:20 of
-  teleop; do not collect cycles, ratings, tags, paths, or notes in the match
+  teleop. Count the transition and four alliance shifts, showing the active
+  hub from the auto winner or FMS selection after a tie. Scouts can restart an
+  unsubmitted run after confirming its timeline will be discarded. Do not
+  collect cycles, ratings, tags, paths, or notes in the match
   entry form. Keep existing reports and pit scouting intact. Activity-only
   submissions must remain compatible with the existing report backend.
 
@@ -228,7 +231,9 @@ redirects here; keep project guidance here rather than duplicating it.
   follow-ups, including admin submissions. New events start closed; legacy
   events without the setting remain open. Viewing data and rankings stays open.
 - Breakdown alerts remain unresolved until a required follow-up form is saved.
-  Keep device notifications and in-app scout alerts consistent.
+  Show the assigned pit scout as responsible for following up, but allow any
+  approved scout to complete the report. Keep device notifications and in-app
+  scout alerts consistent.
 - Team logos must come from TBA, not local logo overrides. The supplied ITKAN
   image is the app favicon. Team-color accents come from FRC Colors; preserve
   readable card text and neutral fallbacks when branding is unavailable.
@@ -241,6 +246,12 @@ redirects here; keep project guidance here rather than duplicating it.
 - Keep strategy-board robot markers square and paths colored by driver station.
 
 ## Rank Teams And Navigation
+
+- Design phone screens for fast scouting with compact cards, visible primary
+  actions, safe-area padding, and 44px or larger touch targets. Let mobile
+  pages scroll naturally; avoid nested fixed-height scrolling when possible.
+  Keep secondary detail behind a tap or disclosure and preserve the laptop
+  layouts at responsive breakpoints.
 
 - Keep mobile-only UI redesigns behind responsive breakpoints. The pick-list
   landing page stays full-width at 768px and up, with compact creation controls,

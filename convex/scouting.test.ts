@@ -79,7 +79,7 @@ describe("scouting backend", () => {
     await expect(scout.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: 1,
       activityTimeline: [{ action: "Idle", startMs: 19_000, endMs: 23_000 }] })).rejects.toThrow("timeline is invalid")
     await scout.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: 1,
-      activityTimeline: [{ action: "Idle", startMs: 0, endMs: 20_000 }, { action: "Traveling", startMs: 23_000, endMs: 25_000 }] })
+      activityTimeline: [{ action: "Idle", startMs: 0, endMs: 20_000 }, { action: "Stealing", startMs: 23_000, endMs: 25_000 }] })
     const detail = await scout.query(api.teams.detail, { eventId, teamNumber: 1 })
     expect(detail?.matchReports[0].activityTimeline).toHaveLength(2)
     expect(detail?.matchReports[0].autoCycles).toBeUndefined()
@@ -328,6 +328,7 @@ describe("scouting backend", () => {
 
     await admin.mutation(api.scoutAssignments.setMode, { eventId, mode: "manual" })
     await admin.mutation(api.scoutAssignments.assignStation, { eventId, station: "Red1", memberId: initialMembers.find(member => member.tokenIdentifier === "scout-a")!._id })
+    await admin.mutation(api.scoutAssignments.assignTeam, { eventId, teamNumber: 1, memberId: initialMembers.find(member => member.tokenIdentifier === "scout-a")!._id })
     const report = {
       eventId,
       matchNumber: 1,
@@ -400,6 +401,7 @@ describe("scouting backend", () => {
       matchNumber: 1,
       teamNumber: 1,
       kind: "robotBreakdown",
+      responsibleScoutName: initialMembers.find(member => member.tokenIdentifier === "scout-a")!.name || "a@example.com",
     })
 
     await scoutB.mutation(api.notifications.markRead, {
@@ -412,7 +414,7 @@ describe("scouting backend", () => {
     })).rejects.toThrow("Describe what caused")
     await expect(scoutA.mutation(api.notifications.submitBreakdownFollowUp, {
       notificationId: alertsB[0]._id, whatBroke: "Chain", cause: "", repairStatus: "Fixed", notes: "",
-    })).rejects.toThrow("Notification not found")
+    })).rejects.toThrow("Describe what caused")
     await expect(scoutB.mutation(api.notifications.submitBreakdownFollowUp, {
       notificationId: alertsB[0]._id, whatBroke: "  ", cause: "", repairStatus: "Fixed", notes: "",
     })).rejects.toThrow("Describe what broke")

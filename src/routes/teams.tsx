@@ -164,7 +164,7 @@ export function TeamsRoute() {
             key={team._id}
             type="button"
             onClick={() => setSelectedTeam(team.teamNumber)}
-            className="relative grid gap-3 overflow-hidden rounded-xl border bg-card p-4 pt-5 text-left shadow-sm transition hover:border-primary/50"
+            className="relative grid min-h-11 gap-2 overflow-hidden rounded-xl border bg-card p-3 pt-4 text-left shadow-sm transition hover:border-primary/50 sm:gap-3 sm:p-4 sm:pt-5"
           >
             {teamColors[team.teamNumber] && <span aria-hidden="true" className="absolute inset-x-0 top-0 flex h-1.5">
               <span className="w-2/3" style={{ backgroundColor: teamColors[team.teamNumber].primary }} />
@@ -174,7 +174,7 @@ export function TeamsRoute() {
               <TeamAvatar teamNumber={team.teamNumber} />
               <div className="min-w-0 flex-1">
                 <p className={`text-xl font-semibold ${team.picked ? "line-through text-muted-foreground" : ""}`}>{team.eventTeamAlias ?? team.teamNumber}</p>
-                <p className={`text-sm text-muted-foreground ${team.picked ? "line-through" : ""}`}>{team.nickname}</p>
+                <p className={`truncate text-sm text-muted-foreground ${team.picked ? "line-through" : ""}`}>{team.nickname}</p>
                 {team.picked && <p className="mt-1 text-xs font-medium text-muted-foreground">Picked</p>}
               </div>
               <span className="rounded-md bg-muted px-2 py-1 text-xs">
@@ -186,7 +186,12 @@ export function TeamsRoute() {
               <Metric label="xP" value={fmt(team.xp)} />
               <Metric label="Avg RP" value={fmt(team.averageRp)} />
             </div>
-            <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-t pt-3 text-xs">
+            <p className="text-xs text-muted-foreground sm:hidden">{team.pitScouted ? "Pit scouted" : "Pit pending"} · {team.matchReportCount} match {team.matchReportCount === 1 ? "report" : "reports"}</p>
+            {(team.observedActivities.includes("Defending") || team.observedActivities.includes("Passing")) && <div className="flex flex-wrap gap-1" aria-label="Observed match activities">
+              {team.observedActivities.includes("Defending") && <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-medium text-rose-700 dark:text-rose-300">Defense seen</span>}
+              {team.observedActivities.includes("Passing") && <span className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-xs font-medium text-cyan-700 dark:text-cyan-300">Passing seen</span>}
+            </div>}
+            <dl className="hidden grid-cols-2 gap-x-3 gap-y-1.5 border-t pt-3 text-xs sm:grid">
               {[["Pit", team.pitScouted ? "Scouted" : "Not scouted"], ["Reports", String(team.matchReportCount)], ["Driver", String(team.averageDriverRating)], ["Teleop fuel", String(team.averageTeleopFuel)]].map(([label, value]) => <div key={label} className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2"><dt className="text-muted-foreground">{label}</dt><dd className="font-medium tabular-nums">{value}</dd></div>)}
             </dl>
           </button>

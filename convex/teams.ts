@@ -79,6 +79,9 @@ export const list = query({
         const bestEndgame = endgameScores.length
           ? climbLabel(Math.max(...endgameScores))
           : "No reports"
+        const observedActivities = [...new Set(teamReports.flatMap(report =>
+          (report.activityTimeline ?? []).filter(segment => segment.endMs > segment.startMs).map(segment => segment.action),
+        ))]
         const pickTier =
           pickItems.find((item) => item.teamNumber === team.teamNumber)?.tier ??
           "uncategorized"
@@ -96,6 +99,7 @@ export const list = query({
           averageDriverRating: Number(driverAverage.toFixed(1)),
           averageTeleopFuel: Number(teleopAverage.toFixed(1)),
           commonEndgameClimb: bestEndgame,
+          observedActivities,
           pickTier,
           epa: stats?.epa,
           xp: args.xpScope && !eventOnly

@@ -7,6 +7,7 @@ import { NavLink, Outlet, useNavigate, useSearchParams } from "react-router"
 import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
 import type { Doc } from "../../convex/_generated/dataModel"
+type BreakdownAlert = Doc<"scoutNotifications"> & { responsibleScoutName: string | null }
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
@@ -98,8 +99,8 @@ export function RootRoute() {
   const approvalResult = notificationResults.approvals
   const approvals: { _id: string; name: string; requestedAt: number }[] = approvalResult instanceof Error ? [] : approvalResult ?? []
   const notificationError = notificationResult instanceof Error
-  const notifications: Doc<"scoutNotifications">[] | undefined = notificationError ? undefined : notificationResult
-  const [selectedAlert, setSelectedAlert] = useState<Doc<"scoutNotifications"> | null>(null)
+  const notifications: BreakdownAlert[] | undefined = notificationError ? undefined : notificationResult
+  const [selectedAlert, setSelectedAlert] = useState<BreakdownAlert | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const removeDevice = useMutation(api.pushSubscriptions.remove)
   const syncBreakdownAlerts = useMutation(api.notifications.syncBreakdownAlerts)
@@ -247,6 +248,7 @@ export function RootRoute() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm leading-snug">{notification.message}</span>
+                        <span className="mt-1 block text-xs font-medium text-foreground">Assigned: {notification.responsibleScoutName ?? "No pit scout yet"} · Any approved scout can follow up</span>
                         <span className="mt-1 block text-xs text-muted-foreground">
                           {formatNotificationTime(notification.createdAt)}
                           {" · Tap to record pit follow-up"}
@@ -316,7 +318,7 @@ export function RootRoute() {
 }
 
 function BreakdownFollowUpForm({ notification, onComplete }: {
-  notification: Doc<"scoutNotifications">
+  notification: BreakdownAlert
   onComplete: () => void
 }) {
   const submit = useMutation(api.notifications.submitBreakdownFollowUp)
@@ -351,6 +353,7 @@ function BreakdownFollowUpForm({ notification, onComplete }: {
         <DialogTitle>Team {notification.teamNumber} · QM{notification.matchNumber} breakdown</DialogTitle>
         <DialogDescription>
           Ask the team at their pit what happened. This alert stays active until a scout submits the follow-up.
+          {" "}Assigned: {notification.responsibleScoutName ?? "No pit scout yet"}. Any approved scout can complete it.
         </DialogDescription>
       </DialogHeader>
       <div className="grid gap-2">

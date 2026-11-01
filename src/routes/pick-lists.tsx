@@ -132,7 +132,7 @@ export function PickListsRoute() {
 
   if (selectedList) {
     return (
-      <section className="flex h-[calc(100svh-5.5rem)] min-h-0 flex-col gap-4 overflow-hidden sm:h-[calc(100svh-6.5rem)] md:h-[calc(100svh-7rem)] md:gap-3">
+      <section className="flex min-h-0 flex-col gap-3 pb-4 sm:h-[calc(100svh-6.5rem)] sm:overflow-hidden md:h-[calc(100svh-7rem)]">
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
           <div className="min-w-0 md:flex md:items-center md:gap-3">
             <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedListId(null)}>
@@ -323,6 +323,7 @@ function PickBoard({
     averageDriverRating: number
     averageTeleopFuel: number
     commonEndgameClimb: string
+    observedActivities: string[]
   }[]
   readOnly: boolean
 }) {
@@ -485,7 +486,7 @@ function PickBoard({
       onDragCancel={() => setDraggedTeam(null)}
       onDragEnd={(event) => void onDragEnd(event)}
     >
-      <div className="flex min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden">
+      <div className="flex min-h-0 w-full flex-1 flex-col gap-3 sm:overflow-hidden">
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
           <div className="grid gap-1">
             <p className="text-xs text-muted-foreground"><span className="sm:hidden">Tap a team for reports and breakdowns.</span><span className="hidden sm:inline">{readOnly ? "Click a team for reports and breakdowns." : "Drag teams between tiers · Click a team for reports."}</span></p>
@@ -589,13 +590,14 @@ function PickColumn({
     averageDriverRating: number
     averageTeleopFuel: number
     commonEndgameClimb: string
+    observedActivities: string[]
   })[]
 }) {
   const { setNodeRef } = useDroppable({ id: `column:${tier}` })
   return (
     <section
       ref={setNodeRef}
-      className="grid h-full min-h-0 grid-rows-[auto_1fr] gap-2 rounded-xl border bg-card p-3 md:gap-3"
+      className="grid min-h-0 gap-2 rounded-xl border bg-card p-2 sm:h-full sm:grid-rows-[auto_1fr] sm:p-3 md:gap-3"
     >
       <div className="flex items-center justify-between">
         <h2 className="font-medium md:text-base md:font-semibold">{tierLabels[tier]}</h2>
@@ -605,7 +607,7 @@ function PickColumn({
         items={items.map((item) => `team:${item.teamNumber}`)}
         strategy={verticalListSortingStrategy}
       >
-        <div className="grid min-h-0 content-start gap-2 overflow-y-auto pr-1">
+        <div className="grid min-h-0 content-start gap-2 sm:overflow-y-auto sm:pr-1">
           {!items.length && <p className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">No teams in this tier yet.</p>}
           {items.map((item) => (
             <PickCard
@@ -661,6 +663,7 @@ function PickCard({
     averageDriverRating: number
     averageTeleopFuel: number
     commonEndgameClimb: string
+    observedActivities: string[]
   }
   readOnly: boolean
   isSearchActive: boolean
@@ -693,7 +696,7 @@ function PickCard({
         setNodeRef(node)
       }}
       style={{ transform: isDragging ? undefined : CSS.Transform.toString(transform), transition }}
-      className={`relative grid gap-2 rounded-lg border bg-background p-3 pt-5 text-sm transition-colors md:p-4 md:pt-5 ${
+      className={`relative grid gap-2 rounded-lg border bg-background p-2 pt-4 text-sm transition-colors md:p-4 md:pt-5 ${
         isDragging ? "opacity-60 ring-2 ring-primary" : ""
       } ${
         isSearchActive && isSearchMatch
@@ -713,7 +716,7 @@ function PickCard({
           <TeamAvatar teamNumber={item.teamNumber} />
           <div className="min-w-0 break-words">
           <p className="font-semibold md:text-xl">{item.eventTeamAlias ?? item.teamNumber}</p>
-          <p className="text-muted-foreground md:text-base">{item.nickname}</p>
+          <p className="truncate text-muted-foreground md:text-base">{item.nickname}</p>
           </div>
           </div>
         </button>
@@ -742,6 +745,10 @@ function PickCard({
           </div>
         ))}
       </dl>
+      {(item.observedActivities.includes("Defending") || item.observedActivities.includes("Passing")) && <div className="flex flex-wrap gap-1" aria-label="Observed match activities">
+        {item.observedActivities.includes("Defending") && <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-medium text-rose-700 dark:text-rose-300">Defense seen</span>}
+        {item.observedActivities.includes("Passing") && <span className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-xs font-medium text-cyan-700 dark:text-cyan-300">Passing seen</span>}
+      </div>}
       {!readOnly && <label className="grid gap-1 text-xs text-muted-foreground sm:hidden">
         Move to tier
         <select className="min-h-11 w-full rounded-md border bg-background px-2 text-sm text-foreground"
@@ -758,7 +765,7 @@ function PickCard({
       {me?.role === "admin" ? <Button type="button" className="md:order-2" variant={item.picked ? "secondary" : "outline"} size="sm" onClick={onPicked} disabled={savingPicked} aria-pressed={item.picked} aria-label={`${item.picked ? "Undo picked for" : "Mark picked"} team ${item.teamNumber}`}>
         {item.picked ? "Picked · Undo" : "Mark picked"}
       </Button> : item.picked ? <p className="text-xs text-muted-foreground">Picked · unavailable</p> : null}
-      <div className={`grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted-foreground ${!item.pitScouted && item.averageDriverRating === 0 && item.averageTeleopFuel === 0 && item.commonEndgameClimb === "No reports" ? "md:hidden" : ""}`}>
+      <div className={`hidden grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted-foreground md:grid ${!item.pitScouted && item.averageDriverRating === 0 && item.averageTeleopFuel === 0 && item.commonEndgameClimb === "No reports" ? "md:hidden" : ""}`}>
         <span>{item.pitScouted ? "Pit done" : "No pit"}</span>
         <span>Driver {item.averageDriverRating}</span>
         <span>Fuel {item.averageTeleopFuel}</span>

@@ -10,7 +10,7 @@ import type { Id } from "../../convex/_generated/dataModel"
 import { AssignmentHandoff } from "@/components/assignment-handoff"
 import { ScoutingLeaderboard } from "@/components/scouting-leaderboard"
 import { MatchActivity } from "@/components/match-activity"
-import { matchActions, endActivityAt, AUTO_END_MS, TELEOP_START_MS, MATCH_END_MS, type MatchActivitySegment } from "@/lib/match-activity"
+import { matchActions, endActivityAt, AUTO_END_MS, TELEOP_START_MS, MATCH_END_MS, type AllianceColor, type MatchActivitySegment } from "@/lib/match-activity"
 import type { PathPoint } from "@/components/auto-path"
 import { MatchVideoLink } from "@/components/match-video"
 import { MatchVideoFolder } from "@/components/match-video-folder"
@@ -45,6 +45,7 @@ type MatchFormState = {
   activityStartedAt: number
   activityEndedAt: number
   activityTimeline: MatchActivitySegment[]
+  firstInactiveHub: "" | AllianceColor
   teleopNotes: string
   endgameClimb: EndgameClimb
   endgameNotes: string
@@ -70,6 +71,7 @@ const emptyMatchForm: MatchFormState = {
   activityStartedAt: 0,
   activityEndedAt: 0,
   activityTimeline: [],
+  firstInactiveHub: "",
   teleopNotes: "",
   endgameClimb: "none",
   endgameNotes: "",
@@ -288,6 +290,7 @@ export function MatchScoutingRoute() {
           eventId={activeEvent._id}
           matchNumber={selectedMatch.matchNumber}
           teamNumber={teamNumber}
+          onClose={() => { setMatchNumber(null); setTeamNumber(null) }}
         />
         </section>
       )}
@@ -399,11 +402,13 @@ function MatchForm({
   eventId,
   matchNumber,
   teamNumber,
+  onClose,
 }: {
   scoutToken: string
   eventId: Id<"events">
   matchNumber: number
   teamNumber: number
+  onClose: () => void
 }) {
   const scoutingClosed = useQuery(api.events.list)?.find(event => event._id === eventId)?.scoutingEnabled === false
   const me = useQuery(api.members.me)
@@ -425,6 +430,7 @@ function MatchForm({
       result.tags = Array.isArray(draft.tags) ? draft.tags.filter((tag): tag is string => typeof tag === "string" && matchTags.includes(tag)) : []
       if (Array.isArray(draft.autoPath) && draft.autoPath.length <= 200 && draft.autoPath.every(path => Array.isArray(path) && path.every(p => p && typeof p.x === "number" && Number.isFinite(p.x) && p.x >= 0 && p.x <= 1000 && typeof p.y === "number" && Number.isFinite(p.y) && p.y >= 0 && p.y <= 500)) && draft.autoPath.reduce((count, path) => count + path.length, 0) <= 2000) result.autoPath = draft.autoPath
       if (Array.isArray(draft.activityTimeline) && draft.activityTimeline.length <= 300 && draft.activityTimeline.every(item => item && typeof item === "object" && matchActions.includes(item.action) && Number.isInteger(item.startMs) && Number.isInteger(item.endMs) && item.startMs >= 0 && item.endMs >= item.startMs && item.endMs <= 1_200_000)) result.activityTimeline = draft.activityTimeline
+      if (result.firstInactiveHub !== "red" && result.firstInactiveHub !== "blue") result.firstInactiveHub = ""
       if (!result.activityStartedAt) { result.activityTimeline = []; result.activityEndedAt = 0 }
       if (!["none", "level1"].includes(result.autoClimb)) result.autoClimb = "none"
       if (!["none", "level1", "level2", "level3"].includes(result.endgameClimb)) result.endgameClimb = "none"
@@ -433,7 +439,6 @@ function MatchForm({
   })
   const [form, setForm] = useState<MatchFormState>(initialDraft)
   const [savedForm, setSavedForm] = useState(() => JSON.stringify(initialDraft))
-  const [hasDraft, setHasDraft] = useState(initialDraft !== emptyMatchForm)
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
   const dirty = JSON.stringify(form) !== savedForm
@@ -446,10 +451,19 @@ function MatchForm({
     try {
       localStorage.setItem(draftKey, JSON.stringify(form))
       setSavedForm(JSON.stringify(form))
-      setHasDraft(true)
       toast.success("Draft saved on this device. It has not been submitted.")
       return true
     } catch { toast.error("Could not save the draft. Check device storage and try again."); return false }
+  }
+  function restartRun() {
+    const restarted = { ...emptyMatchForm, activityStartedAt: Date.now() }
+    setForm(restarted)
+    try {
+      localStorage.setItem(draftKey, JSON.stringify(restarted))
+      setSavedForm(JSON.stringify(restarted))
+    } catch {
+      toast.error("Run restarted, but the draft could not be saved on this device.")
+    }
   }
   useBeforeUnload((event) => {
     if (dirty) { event.preventDefault(); event.returnValue = "" }
@@ -468,8 +482,8 @@ function MatchForm({
       toast.success(`QM${matchNumber} report saved on device. Upload pending.`)
       setForm(emptyMatchForm)
       setSavedForm(JSON.stringify(emptyMatchForm))
-      setHasDraft(false)
       try { localStorage.removeItem(draftKey) } catch { /* Submission succeeded even if local cleanup fails. */ }
+      onClose()
     } catch (error) {
       toast.error(error instanceof ConvexError ? String(error.data) : error instanceof Error ? error.message : "Save failed")
     } finally {
@@ -478,48 +492,45 @@ function MatchForm({
     }
   }
 
-  return (
-    <div className="grid gap-4">
-      {blocker.state === "blocked" && <div role="alert" className="sticky top-14 z-30 grid gap-3 rounded-xl border bg-background p-4 shadow-lg">
-        <p>You have unsaved changes. Save a draft before leaving?</p>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => blocker.reset()}>Keep scouting</Button>
-          <Button onClick={() => { if (saveDraft()) blocker.proceed() }}>Save draft and leave</Button>
-          <Button variant="outline" onClick={() => blocker.proceed()}>Discard and leave</Button>
-        </div>
-      </div>}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 p-3">
-        <p role="status" className="text-xs text-muted-foreground">{hasDraft ? "Draft saved on this device" : "Drafts stay on this device"}{dirty ? " · Unsaved changes" : ""} · Not submitted</p>
-        <Button type="button" variant="outline" disabled={saving} onClick={() => saveDraft()}>Save draft</Button>
-      </div>
-      {reportSubmitted === false && allowedByAssignment && !scoutingClosed && <MatchActivity startedAt={form.activityStartedAt} endedAt={form.activityEndedAt} timeline={form.activityTimeline}
-        onStart={() => setForm(current => ({ ...current, activityStartedAt: Date.now(), activityEndedAt: 0, activityTimeline: [] }))}
-        onAction={action => setForm(current => {
-          if (!current.activityStartedAt || current.activityEndedAt || current.activityTimeline.length >= 300) return current
-          const at = Math.min(MATCH_END_MS, Math.max(0, Date.now() - current.activityStartedAt))
-          if (at >= AUTO_END_MS && at < TELEOP_START_MS || at >= MATCH_END_MS) return current
-          const previous = current.activityTimeline.at(-1)
-          if (previous?.action === action && !(previous.startMs < AUTO_END_MS && at >= TELEOP_START_MS)) return current
-          return { ...current, activityTimeline: [...current.activityTimeline.slice(0, -1), ...(previous ? [{ ...previous, endMs: endActivityAt(previous, at) }] : []), { action, startMs: at, endMs: at }] }
-        })}
-        onStop={() => setForm(current => {
-          if (!current.activityStartedAt || current.activityEndedAt) return current
-          const endedAt = Date.now()
-          const at = Math.min(MATCH_END_MS, Math.max(0, endedAt - current.activityStartedAt))
-          return { ...current, activityEndedAt: endedAt, activityTimeline: current.activityTimeline.map((item, index) => index === current.activityTimeline.length - 1 ? { ...item, endMs: endActivityAt(item, at) } : item) }
-        })} />}
-      {reportSubmitted && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">Report already submitted for team {teamNumber} in QM{matchNumber}. An admin must delete it in team details before this robot can be scouted again.</p>}
-      <fieldset disabled={saving || reportSubmitted !== false} className="grid min-w-0 gap-4">
-        <div className="rounded-xl border bg-card p-4">
-          <h2 className="text-xl font-semibold">QM{matchNumber} · Team {teamNumber}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{allowedByAssignment ? "Tap the robot activity as the match unfolds." : assignments?.enabled ? "This robot is not your assignment." : "Ask an admin to set up scouting assignments."}</p>
-        </div>
-        <Button type="button" size="lg" disabled={!allowedByAssignment || scoutingClosed || saving || !form.activityStartedAt || !form.activityEndedAt || !form.activityTimeline.length} onClick={() => void onSubmit()}>
-          {saving ? "Saving report…" : "Submit activity report"}
-        </Button>
-      </fieldset>
-    </div>
-  )
+  const blockedMessage = reportSubmitted === undefined ? "Checking report status…"
+    : reportSubmitted ? "This robot already has a submitted report. An admin can delete it from team details."
+    : scoutingClosed ? "Scouting is closed for this event."
+    : !allowedByAssignment ? assignments?.enabled ? "This robot is not your assignment." : "Ask an admin to set up scouting assignments."
+    : undefined
+
+  return <MatchActivity
+    matchNumber={matchNumber} teamNumber={teamNumber}
+    startedAt={form.activityStartedAt} endedAt={form.activityEndedAt}
+    timeline={form.activityTimeline} firstInactiveHub={form.firstInactiveHub || null}
+    blockedMessage={blockedMessage} saving={saving}
+    navigationBlocked={blocker.state === "blocked"}
+    onStay={() => { if (blocker.state === "blocked") blocker.reset() }}
+    onSaveAndLeave={() => { if (blocker.state === "blocked" && saveDraft()) blocker.proceed() }}
+    onDiscardAndLeave={() => { if (blocker.state === "blocked") blocker.proceed() }}
+    onExit={() => { if (!dirty || saveDraft()) onClose() }}
+    onStart={() => setForm(current => ({ ...current, activityStartedAt: Date.now(), activityEndedAt: 0, activityTimeline: [] }))}
+    onRestart={restartRun}
+    onFirstInactiveHubChange={hub => setForm(current => ({ ...current, firstInactiveHub: hub ?? "" }))}
+    onHoldStart={action => setForm(current => {
+      if (!current.activityStartedAt || current.activityEndedAt || current.activityTimeline.length >= 300) return current
+      const at = Math.min(MATCH_END_MS, Math.max(0, Date.now() - current.activityStartedAt))
+      if ((at >= AUTO_END_MS && at < TELEOP_START_MS) || at >= MATCH_END_MS) return current
+      return { ...current, activityTimeline: [...current.activityTimeline, { action, startMs: at, endMs: at }] }
+    })}
+    onHoldEnd={() => setForm(current => {
+      const last = current.activityTimeline.at(-1)
+      if (!last || last.endMs > last.startMs) return current
+      const at = Math.min(MATCH_END_MS, Math.max(0, Date.now() - current.activityStartedAt))
+      return { ...current, activityTimeline: [...current.activityTimeline.slice(0, -1), { ...last, endMs: endActivityAt(last, at) }] }
+    })}
+    onStop={() => setForm(current => {
+      if (!current.activityStartedAt || current.activityEndedAt) return current
+      const endedAt = Date.now()
+      const at = Math.min(MATCH_END_MS, Math.max(0, endedAt - current.activityStartedAt))
+      return { ...current, activityEndedAt: endedAt, activityTimeline: current.activityTimeline.map((item, index) => index === current.activityTimeline.length - 1 ? { ...item, endMs: endActivityAt(item, at) } : item) }
+    })}
+    onSubmit={() => void onSubmit()}
+  />
 }
 
 function EmptyEvent() {
