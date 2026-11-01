@@ -33,6 +33,7 @@ function MashGame({ eventId, eventName, year, minimumTeams }: { eventId: Id<"eve
   const [openingSeed] = useState(() => Math.floor(Math.random() * 4294967296))
   const [selectedTeam, setSelectedTeam] = useState<number | null>(null)
   const [saveError, setSaveError] = useState(false)
+  const [showMobileRanking, setShowMobileRanking] = useState(false)
   const scoreMap = ratings(votes)
   const informedTeams = (teams ?? []).filter(hasMashEvidence)
   const skippedCount = (teams?.length ?? 0) - informedTeams.length
@@ -78,7 +79,7 @@ function MashGame({ eventId, eventName, year, minimumTeams }: { eventId: Id<"eve
       </div>
     </details>
     {teams === undefined || sharedVotes === undefined ? <p role="status" className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">Loading teams and shared rankings…</p> : !current ? <p className="rounded-xl border p-6">Fewer than two teams match this filter. Choose a larger percentage or All teams to build more Elo ratings.</p> : <>
-      <div className="grid grid-cols-2 items-start gap-2 sm:gap-4">
+      <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 sm:gap-4">
         {current.map((number, index) => {
           const team = teams.find(team => team.teamNumber === number)
           return team && <RobotCard key={number} team={team} eventId={eventId} year={year} side={index === 0 ? "A" : "B"} onChoose={() => void choose(number)} onDetails={() => setSelectedTeam(number)} disabled={saving || votes.length >= 5000} />
@@ -92,6 +93,8 @@ function MashGame({ eventId, eventName, year, minimumTeams }: { eventId: Id<"eve
     </>}
     <section className="rounded-xl border bg-card p-4 sm:p-5">
       <h2 className="flex items-center gap-2 text-lg font-semibold"><Trophy className="size-5" />Shared Elo ranking</h2>
+      <Button type="button" variant="outline" className="mt-3 min-h-11 w-full sm:hidden" aria-expanded={showMobileRanking} onClick={() => setShowMobileRanking(value => !value)}>{showMobileRanking ? "Hide ranking" : "Show ranking"}</Button>
+      <div className={showMobileRanking ? "block" : "hidden sm:block"}>
       <p className="mt-1 text-xs text-muted-foreground">Everyone sees the same ranking for this event. Elo starts at 1500 and changes with all scouts’ votes. Uncompared teams are unranked; early rankings are provisional. Previous device-only votes are not included.</p>
       <div className="mt-4 overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b text-xs text-muted-foreground"><tr><th className="p-2">Rank</th><th className="p-2">Team</th><th className="p-2">Elo</th><th className="p-2">Votes</th><th className="p-2">Wins</th></tr></thead><tbody>
         {[...(teams ?? [])].filter(team => scoreMap.has(team.teamNumber)).sort((a, b) => scoreMap.get(b.teamNumber)!.score - scoreMap.get(a.teamNumber)!.score || a.teamNumber - b.teamNumber).map((team, index) => {
@@ -101,6 +104,7 @@ function MashGame({ eventId, eventName, year, minimumTeams }: { eventId: Id<"eve
       </tbody></table></div>
       {!votes.length && <p className="py-6 text-center text-sm text-muted-foreground">No rankings yet. Compare two robots to start this event’s shared ranking.</p>}
       {votes.length >= 5000 && <p className="mt-3 text-sm">This ranking has reached its 5,000-comparison limit.</p>}
+      </div>
     </section>
     <TeamDetailDialog eventId={eventId} teamNumber={selectedTeam} xpScope={scope} onOpenChange={open => { if (!open) setSelectedTeam(null) }} />
   </section>
@@ -118,8 +122,8 @@ function RobotCard({ team, eventId, year, side, onChoose, onDetails, disabled }:
     return values.length ? `${(values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1)} / 10 (${values.length} report${values.length === 1 ? "" : "s"})` : "Unknown"
   }
   const format = (value?: number) => value === undefined ? "—" : value.toFixed(1)
-  return <article className="grid min-w-0 content-start gap-3 rounded-xl border bg-card p-2 sm:p-4">
-    <div className="grid min-w-0 gap-2 lg:flex lg:items-start lg:justify-between"><div className="min-w-0"><p className="text-xs text-muted-foreground">Robot {side}</p><div className="mt-2 flex flex-wrap items-center gap-2"><TeamAvatar teamNumber={team.teamNumber} year={year} avatar={team.avatar} /><h2 className="break-all text-xl font-semibold tabular-nums sm:text-3xl">{team.eventTeamAlias ?? team.teamNumber}</h2></div><p className="mt-2 line-clamp-2 min-h-10 break-words text-sm text-muted-foreground" title={team.nickname}>{team.nickname}</p></div><Button size="sm" variant="outline" onClick={onDetails}>Team info</Button></div>
+  return <article className="grid min-w-0 content-start gap-2 rounded-xl border bg-card p-3 sm:gap-3 sm:p-4">
+    <div className="flex min-w-0 items-center justify-between gap-2 sm:grid sm:gap-2 lg:flex lg:items-start"><div className="min-w-0"><p className="text-xs text-muted-foreground">Robot {side}</p><div className="mt-1 flex items-center gap-2 sm:mt-2 sm:flex-wrap"><TeamAvatar teamNumber={team.teamNumber} year={year} avatar={team.avatar} /><div className="min-w-0"><h2 className="break-all text-xl font-semibold tabular-nums sm:text-3xl">{team.eventTeamAlias ?? team.teamNumber}</h2><p className="truncate text-sm text-muted-foreground sm:hidden" title={team.nickname}>{team.nickname}</p></div></div><p className="mt-2 hidden break-words text-sm text-muted-foreground sm:line-clamp-2 sm:min-h-10" title={team.nickname}>{team.nickname}</p></div><Button size="sm" variant="outline" onClick={onDetails} className="min-h-11 shrink-0 sm:min-h-9">Team info</Button></div>
     <Button className="min-h-11 w-full px-1 text-xs sm:text-sm" onClick={onChoose} disabled={disabled || detail === undefined}>Pick {team.eventTeamAlias ?? team.teamNumber}</Button>
     <dl className="grid grid-cols-3 gap-1 sm:gap-2">{[["EPA", format(team.epa)], ["xP", format(team.xp)], ["RP", format(team.averageRp)]].map(([label, value]) => <div key={label} className="min-w-0 rounded-md bg-muted/60 px-1 py-2 sm:px-3"><dt className="text-[11px] text-muted-foreground sm:text-xs">{label}</dt><dd className="break-all text-xs font-semibold tabular-nums sm:text-lg" aria-label={value === "—" ? `${label} unknown` : undefined}>{value}</dd></div>)}</dl>
     <RobotPhotos eventId={eventId} teamNumber={team.teamNumber} year={year} photoIds={[...new Set([...(detail?.pitReports ?? [])].sort((a, b) => b.updatedAt - a.updatedAt).flatMap(report => report.photoIds ?? []))].slice(0, 6)} />
@@ -134,6 +138,7 @@ function RobotPhotos({ eventId, teamNumber, photoIds, year }: { eventId: Id<"eve
   const [selected, setSelected] = useState<string | null>(null)
   const [external, setExternal] = useState<{ id: string; url: string }[]>([])
   const [source, setSource] = useState<"all" | "ours" | "tba">("all")
+  const [mobileOpen, setMobileOpen] = useState(false)
   const [mediaStatus, setMediaStatus] = useState("Loading TBA photos…")
   useEffect(() => {
     const controller = new AbortController()
@@ -152,6 +157,8 @@ function RobotPhotos({ eventId, teamNumber, photoIds, year }: { eventId: Id<"eve
   const available = [...(source === "tba" ? [] : (photos ?? []).map(photo => ({ ...photo, source: "Our pit scouting" }))), ...(source === "ours" ? [] : external.map(photo => ({ ...photo, source: "The Blue Alliance" })))].filter(photo => photo.url && !failed.includes(photo.id))
   const active = available.find(photo => photo.id === selected) ?? available[0]
   return <div className="grid gap-2">
+    <button type="button" aria-expanded={mobileOpen} onClick={() => setMobileOpen(value => !value)} className="min-h-11 rounded-lg border px-3 text-left text-sm font-medium sm:hidden">{mobileOpen ? "Hide robot photos" : "Show robot photos"}</button>
+    <div className={mobileOpen ? "grid gap-2" : "hidden sm:grid sm:gap-2"}>
     <label className="grid gap-1 text-[11px] text-muted-foreground sm:hidden">Photo source
       <select className="min-h-11 min-w-0 w-full rounded-md border bg-background px-2 text-sm text-foreground" value={source} onChange={event => { setSource(event.target.value as typeof source); setSelected(null) }}>
         <option value="all">All photos</option><option value="ours">Our photos</option><option value="tba">TBA photos</option>
@@ -169,5 +176,6 @@ function RobotPhotos({ eventId, teamNumber, photoIds, year }: { eventId: Id<"eve
     </div>}
     <p className="text-[11px] text-muted-foreground">{active.source} · {year} · click to enlarge</p>
     </>}
+    </div>
   </div>
 }

@@ -2,7 +2,7 @@ import { useAction, useConvex, useQuery } from "convex/react"
 import { uploadScoutingReport } from "@/lib/upload-scouting-report"
 import { deleteDraft, queueReport, readDraft, writeDraft } from "@/lib/scouting-outbox"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Camera, Upload, MapPinned, RefreshCw, X } from "lucide-react"
+import { Camera, Upload, MapPinned, RefreshCw, Search, X } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
@@ -12,6 +12,7 @@ import { ScoutingLeaderboard } from "@/components/scouting-leaderboard"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { eventLabel, useActiveEvent } from "@/lib/active-event"
@@ -92,6 +93,7 @@ export function PitScoutingRoute() {
     activeEvent ? { eventId: activeEvent._id } : "skip",
   )
   const [selectedTeam, setSelectedTeam] = useState<number | null>(null)
+  const [teamSearch, setTeamSearch] = useState("")
   const fetchPitMap = useAction(api.nexus.fetchPitMap)
   const [pitMap, setPitMap] = useState<{
     eventKey: string
@@ -101,11 +103,17 @@ export function PitScoutingRoute() {
   } | null>(null)
   const [pitMapError, setPitMapError] = useState<string | null>(null)
   const [pitMapLoading, setPitMapLoading] = useState(false)
+  const [mapOpen, setMapOpen] = useState(false)
 
   const pitByTeam = useMemo(
     () => new Map((pitMap?.pits ?? []).map((pit) => [pit.teamNumber, pit.location])),
     [pitMap],
   )
+  const normalizedTeamSearch = teamSearch.trim().toLowerCase()
+  const filteredTeams = (teams ?? []).filter(team => !normalizedTeamSearch || [
+    String(team.teamNumber), team.eventTeamAlias ?? "", team.nickname,
+    pitByTeam.get(team.teamNumber) ?? "",
+  ].some(value => value.toLowerCase().includes(normalizedTeamSearch)))
 
   const loadPitMap = useCallback(async (eventId: Id<"events">) => {
     setPitMapLoading(true)
@@ -142,7 +150,11 @@ export function PitScoutingRoute() {
       {me?.approvalStatus === "approved" && <ScoutingLeaderboard eventId={activeEvent._id} />}
       {selectedTeam === null ? (
         <>
-          <div className="grid min-w-0 gap-3 border-y py-4">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <Input type="search" value={teamSearch} onChange={event => setTeamSearch(event.target.value)} placeholder="Search team number, name, or pit" aria-label="Search pit scouting teams" className="min-h-11 pl-9" />
+          </div>
+          {!normalizedTeamSearch && <div className="grid min-w-0 gap-3 border-y py-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <MapPinned className="size-5 text-primary" aria-hidden="true" />
@@ -168,11 +180,21 @@ export function PitScoutingRoute() {
               </Button>
             </div>
             {pitMap?.layout && pitMap.eventKey === activeEvent.eventKey ? (
-              <PitMap layout={pitMap.layout} teams={teams ?? []} onSelect={setSelectedTeam} />
+              <>
+                <Button type="button" variant="outline" className="min-h-11 sm:hidden" onClick={() => setMapOpen(true)}>Open pit map</Button>
+                <div className="hidden sm:block"><PitMap layout={pitMap.layout} teams={teams ?? []} onSelect={setSelectedTeam} /></div>
+                <Dialog open={mapOpen} onOpenChange={setMapOpen}>
+                  <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100%-1rem)] overflow-y-auto p-3 sm:hidden">
+                    <DialogHeader><DialogTitle>Nexus pit map</DialogTitle></DialogHeader>
+                    <PitMap layout={pitMap.layout} teams={teams ?? []} onSelect={number => { setMapOpen(false); setSelectedTeam(number) }} />
+                  </DialogContent>
+                </Dialog>
+              </>
             ) : null}
-          </div>
+          </div>}
+          {normalizedTeamSearch && <p role="status" className="text-sm text-muted-foreground">{filteredTeams.length} {filteredTeams.length === 1 ? "team" : "teams"} found</p>}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {(teams ?? []).map((team) => {
+            {filteredTeams.map((team) => {
               const pitLocation = pitByTeam.get(team.teamNumber)
               return (
                 <button
@@ -195,6 +217,7 @@ export function PitScoutingRoute() {
               )
             })}
           </div>
+          {normalizedTeamSearch && !filteredTeams.length && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">No teams match that search.</p>}
         </>
       ) : (
         <PitForm

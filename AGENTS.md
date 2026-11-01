@@ -66,7 +66,8 @@ redirects here; keep project guidance here rather than duplicating it.
   hub from the auto winner or FMS selection after a tie. Show the selected
   robot's alliance and whether its own hub is on or off in the current shift.
   Keep the live phone UI close to 9483's compact timer, two-wide top action
-  row, three-button middle row, lower action row, and visible segment timeline.
+  row, three-button middle row, two-wide lower action row, and visible segment
+  timeline. Size buttons by their width and put Stealing on a separate row.
   Keep actions press-and-hold with release to stop recording.
   Scouts can restart an
   unsubmitted run after confirming its timeline will be discarded. Do not
@@ -248,6 +249,11 @@ redirects here; keep project guidance here rather than duplicating it.
   Validate uploaded storage metadata on the backend even for admins.
 - Support phone-camera capture and multiple-file uploads. Preserve existing
   reports without photos, but require a photo when submitting updates.
+- Pit scouting team selection supports search by number, event alias, name,
+  and pit location. On phones, show the Nexus floor plan in a dialog rather
+  than inline above the team cards. TBA and FIRST supply official event data;
+  Nexus supplies pit locations and floor plans. For FIRST-linked events with a
+  local alias, try the official event code for Nexus lookup.
 - Keep strategy-board robot markers square and paths colored by driver station.
 
 ## Rank Teams And Navigation

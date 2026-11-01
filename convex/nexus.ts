@@ -5,6 +5,7 @@ import { normalizeNexusMap, type NexusMap } from "./lib/nexusMap"
 
 type EventInfo = {
   eventKey: string
+  firstEventCode?: string
 }
 
 type PitMapEntry = {
@@ -18,7 +19,7 @@ export const eventInfo = internalQuery({
   args: { eventId: v.id("events") },
   handler: async (ctx, args): Promise<EventInfo | null> => {
     const event = await ctx.db.get(args.eventId)
-    return event ? { eventKey: event.eventKey } : null
+    return event ? { eventKey: event.eventKey, firstEventCode: event.firstEventCode } : null
   },
 })
 
@@ -42,10 +43,20 @@ export const fetchPitMap = action({
       throw new Error("Event not found")
     }
 
-    const response = await fetch(
-      `https://frc.nexus/api/v1/event/${encodeURIComponent(event.eventKey)}/pits`,
-      { headers: { "Nexus-Api-Key": apiKey } },
-    )
+    // A FIRST-linked event can have a local app key (for example NTX) that
+    // differs from the official event code used by Nexus.
+    const firstKey = event.firstEventCode && /^\d{4}/.test(event.eventKey)
+      ? `${event.eventKey.slice(0, 4)}${event.firstEventCode.toLowerCase()}` : null
+    const candidateKeys = [...new Set([firstKey, event.eventKey].filter((key): key is string => !!key))]
+    let nexusKey = candidateKeys[0]
+    let response: Response | null = null
+    for (const key of candidateKeys) {
+      nexusKey = key
+      response = await fetch(`https://frc.nexus/api/v1/event/${encodeURIComponent(key)}/pits`,
+        { headers: { "Nexus-Api-Key": apiKey } })
+      if (response.status !== 404) break
+    }
+    if (!response) throw new Error("Nexus event key unavailable")
     const text = await response.text()
     const payload = parseJson(text)
 
@@ -59,7 +70,7 @@ export const fetchPitMap = action({
 
     const pits = normalizePits(payload)
     const mapResponse = await fetch(
-      `https://frc.nexus/api/v1/event/${encodeURIComponent(event.eventKey)}/map`,
+      `https://frc.nexus/api/v1/event/${encodeURIComponent(nexusKey)}/map`,
       { headers: { "Nexus-Api-Key": apiKey } },
     )
     if (!mapResponse.ok && mapResponse.status !== 404) {
