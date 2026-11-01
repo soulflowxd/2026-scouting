@@ -63,7 +63,9 @@ redirects here; keep project guidance here rather than duplicating it.
   Passing, Climbing, Idle, Defending, Traveling, Intaking, Stealing) inspired by 9483's
   scouting workflow. Show 20 seconds of auto, a 3-second gap, then 2:20 of
   teleop. Count the transition and four alliance shifts, showing the active
-  hub from the auto winner or FMS selection after a tie. Scouts can restart an
+  hub from the auto winner or FMS selection after a tie. Show the selected
+  robot's alliance and whether its own hub is on or off in the current shift.
+  Scouts can restart an
   unsubmitted run after confirming its timeline will be discarded. Do not
   collect cycles, ratings, tags, paths, or notes in the match
   entry form. Keep existing reports and pit scouting intact. Activity-only

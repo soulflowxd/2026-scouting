@@ -290,6 +290,7 @@ export function MatchScoutingRoute() {
           eventId={activeEvent._id}
           matchNumber={selectedMatch.matchNumber}
           teamNumber={teamNumber}
+          alliance={selectedMatch.redTeams.includes(teamNumber) ? "red" : "blue"}
           onClose={() => { setMatchNumber(null); setTeamNumber(null) }}
         />
         </section>
@@ -402,12 +403,14 @@ function MatchForm({
   eventId,
   matchNumber,
   teamNumber,
+  alliance,
   onClose,
 }: {
   scoutToken: string
   eventId: Id<"events">
   matchNumber: number
   teamNumber: number
+  alliance: AllianceColor
   onClose: () => void
 }) {
   const scoutingClosed = useQuery(api.events.list)?.find(event => event._id === eventId)?.scoutingEnabled === false
@@ -499,7 +502,7 @@ function MatchForm({
     : undefined
 
   return <MatchActivity
-    matchNumber={matchNumber} teamNumber={teamNumber}
+    matchNumber={matchNumber} teamNumber={teamNumber} alliance={alliance}
     startedAt={form.activityStartedAt} endedAt={form.activityEndedAt}
     timeline={form.activityTimeline} firstInactiveHub={form.firstInactiveHub || null}
     blockedMessage={blockedMessage} saving={saving}

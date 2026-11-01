@@ -20,7 +20,7 @@ const tileIcons = {
 } as const
 
 type Props = {
-  matchNumber: number; teamNumber: number
+  matchNumber: number; teamNumber: number; alliance: AllianceColor
   startedAt: number; endedAt: number; timeline: MatchActivitySegment[]
   firstInactiveHub: AllianceColor | null
   blockedMessage?: string; saving: boolean
@@ -32,7 +32,7 @@ type Props = {
   onSubmit: () => void; onExit: () => void
 }
 
-export function MatchActivity({ matchNumber, teamNumber, startedAt, endedAt, timeline, firstInactiveHub, blockedMessage, saving, navigationBlocked, onStay, onSaveAndLeave, onDiscardAndLeave, onStart, onHoldStart, onHoldEnd, onStop, onRestart, onFirstInactiveHubChange, onSubmit, onExit }: Props) {
+export function MatchActivity({ matchNumber, teamNumber, alliance, startedAt, endedAt, timeline, firstInactiveHub, blockedMessage, saving, navigationBlocked, onStay, onSaveAndLeave, onDiscardAndLeave, onStart, onHoldStart, onHoldEnd, onStop, onRestart, onFirstInactiveHubChange, onSubmit, onExit }: Props) {
   const [now, setNow] = useState(0)
   const [heldAction, setHeldAction] = useState<string | null>(null)
   const [confirmRestart, setConfirmRestart] = useState(false)
@@ -61,6 +61,10 @@ export function MatchActivity({ matchNumber, teamNumber, startedAt, endedAt, tim
   const inGap = elapsedMs >= AUTO_END_MS && elapsedMs < TELEOP_START_MS
   const tileDisabled = saving || !!blockedMessage || inGap || elapsedMs >= MATCH_END_MS
   const needsHubChoice = shift.label.startsWith("Shift ") && firstInactiveHub === null
+  const hubStatus = elapsedMs >= MATCH_END_MS ? "Match ended"
+    : needsHubChoice ? "Select the auto winner to show your hub status"
+    : shift.inactiveHub === alliance ? "YOUR HUB IS OFF"
+    : "YOUR HUB IS ON"
 
   const stopHold = useCallback(() => {
     if (heldRef.current === null) return
@@ -89,22 +93,24 @@ export function MatchActivity({ matchNumber, teamNumber, startedAt, endedAt, tim
         <div className="grid gap-3">
           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-amber-300">Match scouting</p>
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Ready for QM{matchNumber}?</h1>
-          <p className="mx-auto max-w-sm text-base leading-relaxed text-slate-300">Watch team {teamNumber}. Start the clock when auto begins, then hold an activity while the robot does it.</p>
+          <p className={cn("text-base font-bold uppercase tracking-wide", alliance === "red" ? "text-rose-300" : "text-blue-300")}>Team {teamNumber} · {alliance} alliance</p>
+          <p className="mx-auto max-w-sm text-base leading-relaxed text-slate-300">Start the clock when auto begins, then hold an activity while the robot does it.</p>
         </div>
         {blockedMessage ? <p role="status" className="max-w-sm rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">{blockedMessage}</p> : <button type="button" disabled={saving} onClick={onStart} className="min-h-16 w-full max-w-xs rounded-2xl bg-rose-500 px-6 text-lg font-bold text-white shadow-lg shadow-rose-950/40 transition-transform active:scale-[.98] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white disabled:opacity-50">Start match</button>}
       </main> : <main className="flex flex-1 flex-col gap-3 pb-3 pt-2 sm:gap-5">
         <div className="grid justify-items-center gap-2 text-center">
+          <p className={cn("text-xs font-bold uppercase tracking-[0.12em]", alliance === "red" ? "text-rose-300" : "text-blue-300")}>Team {teamNumber} · {alliance} alliance</p>
           <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-4 py-1 text-xs font-bold uppercase tracking-[0.12em] text-amber-200">{shift.label}</span>
           <p className="text-[clamp(4rem,17vw,6rem)] font-bold leading-none tracking-tight tabular-nums" aria-label={`${elapsedSeconds} seconds elapsed`}>{Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, "0")}</p>
           <p className="text-sm font-medium tabular-nums text-slate-300">{secondsLeft}s left in {shift.label.toLowerCase()}</p>
-          <p className="text-sm font-semibold text-slate-200">{needsHubChoice ? "Select the first inactive hub" : shift.inactiveHub === null ? "Red and Blue hubs active" : `${shift.inactiveHub === "red" ? "Red" : "Blue"} hub inactive · ${shift.inactiveHub === "red" ? "Blue" : "Red"} hub active`}</p>
+          <p role="status" className={cn("rounded-full border px-3 py-1 text-sm font-bold", needsHubChoice || elapsedMs >= MATCH_END_MS ? "border-amber-400/30 bg-amber-400/10 text-amber-100" : shift.inactiveHub === alliance ? "border-rose-400/40 bg-rose-500/15 text-rose-200" : "border-emerald-400/40 bg-emerald-500/15 text-emerald-200")}>{hubStatus}</p>
         </div>
         {!endedAt ? <>
           <button type="button" onClick={() => { flushSync(stopHold); onStop() }} disabled={saving} className="mx-auto inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-rose-500 px-7 font-bold text-white transition-transform active:scale-[.98] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white disabled:opacity-50"><Square className="size-4 fill-current" aria-hidden="true" /> End match</button>
           {elapsedMs >= AUTO_END_MS && elapsedMs < ENDGAME_START_MS && <div className="grid gap-2 rounded-xl border border-white/10 bg-white/[.04] p-3">
-            <p className="text-sm font-medium text-slate-200">First inactive hub <span className="font-normal text-slate-400">· Auto winner, or FMS pick if tied</span></p>
+            <p className="text-sm font-medium text-slate-200">Who won auto? <span className="font-normal text-slate-400">The winner's hub is off in Shift 1. If tied, pick FMS first-off.</span></p>
             <div className="grid grid-cols-2 gap-2" role="group" aria-label="First inactive hub">
-              {(["red", "blue"] as const).map(hub => <button key={hub} type="button" aria-pressed={firstInactiveHub === hub} disabled={saving} onClick={() => onFirstInactiveHubChange(firstInactiveHub === hub ? null : hub)} className={cn("min-h-11 rounded-lg border px-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-50", firstInactiveHub === hub ? hub === "red" ? "border-rose-400 bg-rose-500 text-white" : "border-blue-400 bg-blue-500 text-white" : "border-white/20 bg-white/5 text-slate-200")}>{hub === "red" ? "Red" : "Blue"} inactive first</button>)}
+              {(["red", "blue"] as const).map(hub => <button key={hub} type="button" aria-pressed={firstInactiveHub === hub} disabled={saving} onClick={() => onFirstInactiveHubChange(firstInactiveHub === hub ? null : hub)} className={cn("min-h-11 rounded-lg border px-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-50", firstInactiveHub === hub ? hub === "red" ? "border-rose-400 bg-rose-500 text-white" : "border-blue-400 bg-blue-500 text-white" : "border-white/20 bg-white/5 text-slate-200")}>{hub === "red" ? "Red" : "Blue"} won / first off</button>)}
             </div>
           </div>}
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4" aria-label="Hold a robot activity">
