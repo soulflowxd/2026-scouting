@@ -73,6 +73,15 @@ async function seedEvent() {
 }
 
 describe("scouting backend", () => {
+  test("activity report preserves post-match driver and defense ratings", async () => {
+    const { t, eventId } = await seedEvent()
+    const scout = await approvedScout(t, "ratings@example.com", "ratings-scout")
+    await scout.mutation(api.matchScouting.saveReport, { eventId, matchNumber: 1, teamNumber: 1,
+      activityTimeline: [{ action: "Idle", startMs: 0, endMs: 20_000 }], driverRating: 8, defenseRating: 6 })
+    const detail = await scout.query(api.teams.detail, { eventId, teamNumber: 1 })
+    expect(detail?.matchReports[0]).toMatchObject({ driverRating: 8, defenseRating: 6 })
+  })
+
   test("activity-only reports do not invent cycles or ratings", async () => {
     const { t, eventId } = await seedEvent()
     const scout = await approvedScout(t, "timed@example.com", "timed-scout")

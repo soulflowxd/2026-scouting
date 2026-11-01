@@ -18,6 +18,8 @@ type Props = {
   firstInactiveHub: AllianceColor | null
   brokeDown: boolean; breakdownNotes: string
   onBrokeDownChange: (value: boolean) => void; onBreakdownNotesChange: (value: string) => void
+  driverRating: number; defenseRating: number
+  onDriverRatingChange: (value: number) => void; onDefenseRatingChange: (value: number) => void
   blockedMessage?: string; saving: boolean
   navigationBlocked: boolean
   onStay: () => void; onSaveAndLeave: () => void; onDiscardAndLeave: () => void
@@ -27,7 +29,7 @@ type Props = {
   onSubmit: () => void; onExit: () => void
 }
 
-export function MatchActivity({ matchNumber, teamNumber, alliance, startedAt, endedAt, timeline, firstInactiveHub, brokeDown, breakdownNotes, onBrokeDownChange, onBreakdownNotesChange, blockedMessage, saving, navigationBlocked, onStay, onSaveAndLeave, onDiscardAndLeave, onStart, onHoldStart, onHoldEnd, onStop, onRestart, onFirstInactiveHubChange, onSubmit, onExit }: Props) {
+export function MatchActivity({ matchNumber, teamNumber, alliance, startedAt, endedAt, timeline, firstInactiveHub, brokeDown, breakdownNotes, onBrokeDownChange, onBreakdownNotesChange, driverRating, defenseRating, onDriverRatingChange, onDefenseRatingChange, blockedMessage, saving, navigationBlocked, onStay, onSaveAndLeave, onDiscardAndLeave, onStart, onHoldStart, onHoldEnd, onStop, onRestart, onFirstInactiveHubChange, onSubmit, onExit }: Props) {
   const [now, setNow] = useState(0)
   const [heldAction, setHeldAction] = useState<string | null>(null)
   const [confirmRestart, setConfirmRestart] = useState(false)
@@ -164,6 +166,9 @@ export function MatchActivity({ matchNumber, teamNumber, alliance, startedAt, en
         </> : <div className="grid gap-4 rounded-2xl border border-white/10 bg-white/[.04] p-5 text-center">
           <p className="text-lg font-semibold">Run captured</p>
           <p className="text-sm text-slate-300">{timeline.length} activity {timeline.length === 1 ? "segment" : "segments"} recorded for team {teamNumber}.</p>
+          <div className="grid gap-4 text-left" aria-label="Robot ratings">
+            {([{ label: "Driver rating", value: driverRating, onChange: onDriverRatingChange }, { label: "Defense rating", value: defenseRating, onChange: onDefenseRatingChange }] as const).map(({ label, value, onChange }) => <label key={label} className="grid gap-2 text-sm font-medium text-slate-100"><span className="flex justify-between"><span>{label}</span><strong className="tabular-nums">{value}/10</strong></span><input type="range" min="1" max="10" step="1" value={value} onChange={event => onChange(Number(event.target.value))} className="h-11 w-full cursor-pointer accent-amber-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white" /></label>)}
+          </div>
           <button type="button" disabled={saving || !timeline.length || !!blockedMessage} onClick={onSubmit} className="min-h-14 rounded-xl bg-emerald-500 px-5 font-bold text-[#07130d] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-40">{saving ? "Saving report…" : "Submit activity report"}</button>
         </div>}
         <div className="grid gap-2 rounded-xl border border-white/10 p-3">

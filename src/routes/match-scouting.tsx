@@ -527,7 +527,7 @@ function MatchForm({
     setSaving(true)
     try {
       const activityTimeline = form.activityTimeline
-      await queueReport(scoutToken, { kind: "match", args: { eventId, matchNumber, teamNumber, activityTimeline, tags: form.brokeDown ? ["Broke down"] : [], teleopNotes: form.brokeDown ? form.breakdownNotes.trim() : undefined }, photos: [] })
+      await queueReport(scoutToken, { kind: "match", args: { eventId, matchNumber, teamNumber, activityTimeline, driverRating: form.driverRating, defenseRating: form.defenseRating, tags: form.brokeDown ? ["Broke down"] : [], teleopNotes: form.brokeDown ? form.breakdownNotes.trim() : undefined }, photos: [] })
       toast.success(`QM${matchNumber} report saved on device. Upload pending.`)
       setForm(emptyMatchForm)
       setSavedForm(JSON.stringify(emptyMatchForm))
@@ -552,6 +552,9 @@ function MatchForm({
     startedAt={form.activityStartedAt} endedAt={form.activityEndedAt}
     timeline={form.activityTimeline} firstInactiveHub={form.firstInactiveHub || null}
     brokeDown={form.brokeDown} breakdownNotes={form.breakdownNotes}
+    driverRating={form.driverRating} defenseRating={form.defenseRating}
+    onDriverRatingChange={value => setForm(current => ({ ...current, driverRating: value }))}
+    onDefenseRatingChange={value => setForm(current => ({ ...current, defenseRating: value }))}
     onBrokeDownChange={value => setForm(current => ({ ...current, brokeDown: value, breakdownNotes: value ? current.breakdownNotes : "" }))}
     onBreakdownNotesChange={value => setForm(current => ({ ...current, breakdownNotes: value }))}
     blockedMessage={blockedMessage} saving={saving}
