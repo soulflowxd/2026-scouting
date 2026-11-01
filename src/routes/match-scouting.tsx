@@ -1,7 +1,7 @@
 import { useQuery } from "convex/react"
 import { queueReport } from "@/lib/scouting-outbox"
 import { ConvexError } from "convex/values"
-import { Check, Clock3, ListFilter } from "lucide-react"
+import { Check, Clock3, ListFilter, Search } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useBeforeUnload, useBlocker } from "react-router"
 import { toast } from "sonner"
@@ -96,6 +96,7 @@ export function MatchScoutingRoute() {
   const [teamNumber, setTeamNumber] = useState<number | null>(null)
   const [teamSort, setTeamSort] = useState<TeamSort>("teamNumber")
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
+  const [matchSearch, setMatchSearch] = useState("")
   const reportRef = useRef<HTMLElement>(null)
   const [scrollRequest, setScrollRequest] = useState(0)
   const canOpenReport = (match: number, team: number) => me?.role === "admin" || !!(myAssignments?.enabled && myAssignments.matchAssignments.some(slot => slot.matchNumber === match && slot.teamNumber === team))
@@ -114,6 +115,18 @@ export function MatchScoutingRoute() {
     () => [...(matches ?? [])].sort((a, b) => a.matchNumber - b.matchNumber),
     [matches],
   )
+  const visibleMatches = useMemo(() => {
+    const query = matchSearch.trim().toLowerCase()
+    if (!query) return orderedMatches
+    const qmQuery = query.match(/^(?:qm|q)\s*#?\s*(\d+)$/)
+    const teamQuery = query.match(/^(?:team|t)\s*#?\s*(\d+)$/)
+    const number = qmQuery?.[1] ?? teamQuery?.[1] ?? query.replace(/^#/, "")
+    if (!/^\d+$/.test(number)) return []
+    return orderedMatches.filter(match =>
+      (teamQuery === null && String(match.matchNumber).includes(number)) ||
+      (qmQuery === null && [...match.redTeams, ...match.blueTeams].some(team => String(team).includes(number))),
+    )
+  }, [matchSearch, orderedMatches])
   const reportReady = !!selectedMatch && teamNumber !== null && !!me
   useEffect(() => {
     if (!reportReady || !scrollRequest) return
@@ -156,6 +169,20 @@ export function MatchScoutingRoute() {
       </section>}
       <div className="overflow-hidden rounded-xl border bg-card">
         <div className="flex flex-wrap items-center gap-3 border-b bg-muted/25 px-3 py-3 sm:px-4">
+          <label className="relative w-full sm:w-64">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <span className="sr-only">Search by QM or team number</span>
+            <input
+              type="search"
+              inputMode="search"
+              value={matchSearch}
+              onChange={event => setMatchSearch(event.target.value)}
+              placeholder="Search QM or team #"
+              className="h-9 w-full rounded-lg border bg-background pl-9 pr-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </label>
+          {matchSearch.trim() && <span className="text-xs text-muted-foreground" role="status">{visibleMatches.length} matches found</span>}
+          <div className="basis-full" aria-hidden="true" />
           <div className="flex items-center gap-2 text-sm font-medium">
             <ListFilter className="size-4 text-muted-foreground" aria-hidden="true" />
             Team order
@@ -212,7 +239,10 @@ export function MatchScoutingRoute() {
               No qualification matches are available yet.
             </p>
           )}
-          {orderedMatches.map((match) => {
+          {matches !== undefined && orderedMatches.length > 0 && visibleMatches.length === 0 && (
+            <p className="px-4 py-10 text-center text-sm text-muted-foreground">No matches found for “{matchSearch.trim()}”.</p>
+          )}
+          {visibleMatches.map((match) => {
             const isSelected = matchNumber === match.matchNumber
             const matchVideos = driveVideos.videos.filter(video => video.matchNumber === match.matchNumber)
             if (!matchVideos.length && match.videoUrl) matchVideos.push({ matchNumber: match.matchNumber, name: `QM${match.matchNumber} video`, videoUrl: match.videoUrl })
